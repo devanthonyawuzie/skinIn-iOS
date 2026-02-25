@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		265DFB1C2F4CBF6300E66F91 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 265DFB1B2F4CBF6300E66F91 /* Auth */; };
+		265DFB212F4CC0AC00E66F91 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 265DFB202F4CC0AC00E66F91 /* Supabase */; };
+		265DFCCD2F4E43BA00E66F91 /* Stripe in Frameworks */ = {isa = PBXBuildFile; productRef = 265DFCCC2F4E43BA00E66F91 /* Stripe */; };
+		265DFCCF2F4E43BA00E66F91 /* StripeApplePay in Frameworks */ = {isa = PBXBuildFile; productRef = 265DFCCE2F4E43BA00E66F91 /* StripeApplePay */; };
+		265DFCD12F4E43BA00E66F91 /* StripeCardScan in Frameworks */ = {isa = PBXBuildFile; productRef = 265DFCD02F4E43BA00E66F91 /* StripeCardScan */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		265DFAE52F4B9EA600E66F91 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -40,11 +48,6 @@
 			path = "SkinIn-iOSTests";
 			sourceTree = "<group>";
 		};
-		265DFAF12F4B9EA600E66F91 /* SkinIn-iOSUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "SkinIn-iOSUITests";
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +55,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				265DFB212F4CC0AC00E66F91 /* Supabase in Frameworks */,
+				265DFCCF2F4E43BA00E66F91 /* StripeApplePay in Frameworks */,
+				265DFB1C2F4CBF6300E66F91 /* Auth in Frameworks */,
+				265DFCD12F4E43BA00E66F91 /* StripeCardScan in Frameworks */,
+				265DFCCD2F4E43BA00E66F91 /* Stripe in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,7 +85,7 @@
 			children = (
 				265DFAD92F4B9EA400E66F91 /* SkinIn-iOS */,
 				265DFAE72F4B9EA600E66F91 /* SkinIn-iOSTests */,
-				265DFAF12F4B9EA600E66F91 /* SkinIn-iOSUITests */,
+				265DFB1D2F4CC05F00E66F91 /* Frameworks */,
 				265DFAD82F4B9EA400E66F91 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +98,13 @@
 				265DFAEE2F4B9EA600E66F91 /* SkinIn-iOSUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		265DFB1D2F4CC05F00E66F91 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +127,11 @@
 			);
 			name = "SkinIn-iOS";
 			packageProductDependencies = (
+				265DFB1B2F4CBF6300E66F91 /* Auth */,
+				265DFB202F4CC0AC00E66F91 /* Supabase */,
+				265DFCCC2F4E43BA00E66F91 /* Stripe */,
+				265DFCCE2F4E43BA00E66F91 /* StripeApplePay */,
+				265DFCD02F4E43BA00E66F91 /* StripeCardScan */,
 			);
 			productName = "SkinIn-iOS";
 			productReference = 265DFAD72F4B9EA400E66F91 /* SkinIn-iOS.app */;
@@ -153,9 +173,6 @@
 			dependencies = (
 				265DFAF02F4B9EA600E66F91 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				265DFAF12F4B9EA600E66F91 /* SkinIn-iOSUITests */,
-			);
 			name = "SkinIn-iOSUITests";
 			packageProductDependencies = (
 			);
@@ -195,6 +212,10 @@
 			);
 			mainGroup = 265DFACE2F4B9EA400E66F91;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				265DFB1A2F4CBF6300E66F91 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				265DFCBE2F4E405600E66F91 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 265DFAD82F4B9EA400E66F91 /* Products */;
 			projectDirPath = "";
@@ -578,6 +599,53 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		265DFB1A2F4CBF6300E66F91 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+		265DFCBE2F4E405600E66F91 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 25.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		265DFB1B2F4CBF6300E66F91 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 265DFB1A2F4CBF6300E66F91 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		265DFB202F4CC0AC00E66F91 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 265DFB1A2F4CBF6300E66F91 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		265DFCCC2F4E43BA00E66F91 /* Stripe */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 265DFCBE2F4E405600E66F91 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = Stripe;
+		};
+		265DFCCE2F4E43BA00E66F91 /* StripeApplePay */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 265DFCBE2F4E405600E66F91 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripeApplePay;
+		};
+		265DFCD02F4E43BA00E66F91 /* StripeCardScan */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 265DFCBE2F4E405600E66F91 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripeCardScan;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 265DFACF2F4B9EA400E66F91 /* Project object */;
 }

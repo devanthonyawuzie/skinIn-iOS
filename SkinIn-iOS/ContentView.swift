@@ -1,21 +1,16 @@
+// ContentView.swift
+// SkinIn-iOS
 //
-//  ContentView.swift
-//  SkinIn-iOS
-//
-//  Created by Anthony Awuzie on 2/22/26.
-//
+// Routing is handled entirely by SkinIn_iOSApp.swift via SupabaseManager.isAuthenticated.
+// This file is kept as a no-op stub in case Xcode templates reference it.
+// It is NOT presented anywhere in the live app.
 
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        // Intentionally empty — see SkinIn_iOSApp.swift for the app router.
+        EmptyView()
     }
 }
 
