@@ -1,13 +1,13 @@
-// Views/Shared/MomentumBadge.swift
+// Views/Shared/SkinInBadge.swift
 // SkinIn-iOS
 //
 // Reusable pill badge used on onboarding page 3, LoginView, and HomeView.
 
 import SwiftUI
 
-// MARK: - MomentumBadge
+// MARK: - SkinInBadge
 
-public struct MomentumBadge: View {
+public struct SkinInBadge: View {
     public init() {}
 
     public var body: some View {
@@ -15,7 +15,7 @@ public struct MomentumBadge: View {
             Image(systemName: "bolt.fill")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.brandGreen)
-            Text("MOMENTUM")
+            Text("SkinIn")
                 .font(.badgeLabel)
                 .foregroundStyle(Color.white)
         }
@@ -35,6 +35,6 @@ public struct MomentumBadge: View {
 #Preview {
     ZStack {
         Color.appBackground.ignoresSafeArea()
-        MomentumBadge()
+        SkinInBadge()
     }
 }

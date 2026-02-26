@@ -65,10 +65,42 @@ struct BlueprintView: View {
                         .padding(.top, Spacing.md)
                         .padding(.horizontal, Spacing.lg)
 
-                    // MARK: Roadmap Section
-                    sectionHeader("The Roadmap")
-                        .padding(.top, Spacing.xl)
+                    // MARK: Generate Error Banner
+                    if let err = vm.generateError {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.orange)
+                            Text(err)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.orange)
+                            Spacer()
+                            Button("Retry") { Task { await vm.generatePlan() } }
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.brandGreen)
+                        }
+                        .padding(Spacing.sm)
+                        .background(Color.orange.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .padding(.horizontal, Spacing.lg)
+                        .padding(.top, Spacing.sm)
+                    }
+
+                    // MARK: Roadmap Section
+                    HStack(alignment: .bottom) {
+                        sectionHeader("The Roadmap")
+                        Spacer()
+                        if vm.generatedPlan != nil {
+                            Button(action: { vm.showAllWeeks.toggle() }) {
+                                Text(vm.showAllWeeks ? "View Less" : "View All")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.brandGreen)
+                            }
+                            .accessibilityLabel(vm.showAllWeeks ? "Collapse roadmap" : "Expand to show all 12 weeks")
+                        }
+                    }
+                    .padding(.top, Spacing.xl)
+                    .padding(.horizontal, Spacing.lg)
+                    .animation(.easeInOut(duration: 0.2), value: vm.showAllWeeks)
 
                     roadmapSection
                         .padding(.top, Spacing.sm)
@@ -96,14 +128,50 @@ struct BlueprintView: View {
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
+
+            // MARK: Generating Overlay
+            // Covers the screen while SkinIn builds the AI plan.
+            if vm.isGenerating {
+                ZStack {
+                    Color.white.ignoresSafeArea()
+                    VStack(spacing: 24) {
+                        // Pulsing brain icon container
+                        ZStack {
+                            Circle()
+                                .fill(Color.brandGreen.opacity(0.12))
+                                .frame(width: 80, height: 80)
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 36, weight: .medium))
+                                .foregroundStyle(Color.brandGreen)
+                                .accessibilityHidden(true)
+                        }
+                        VStack(spacing: 8) {
+                            Text("SkinIn is crafting\nyour plan...")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(Color.black)
+                                .multilineTextAlignment(.center)
+                            Text("Analysing your goals and training science")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color(white: 0.55))
+                        }
+                        ProgressView()
+                            .tint(Color.brandGreen)
+                            .scaleEffect(1.3)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showPaymentSheet) {
             PaymentView(onSuccess: {
                 showPaymentSheet = false
+                // Save generated plan to DB in background — non-blocking
+                Task { await vm.savePlan() }
                 onComplete()
             })
         }
+        .task { await vm.generatePlan() }
     }
 
     // MARK: - Navigation Bar

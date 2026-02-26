@@ -17,7 +17,7 @@ struct Exercise: Identifiable {
     let id: UUID
     let name: String
     let sets: Int
-    let reps: Int
+    let reps: String       // API returns "8-10", "60", etc.
     let repUnit: String    // "Reps" or "Secs"
     let imageName: String  // tried with UIImage(named:) first; falls back to sfSymbol
     let sfSymbol: String   // SF Symbol fallback
@@ -30,12 +30,20 @@ final class WorkoutDetailViewModel {
 
     // MARK: Workout metadata
 
-    let workoutName: String
-    let durationMinutes: Int
-    let difficulty: String   // e.g. "Interm.", "Beginner", "Advanced"
-    let calories: Int
-    let exercises: [Exercise]
-    let stakeAmount: Double  // displayed as "$5.00"
+    let workoutId: String
+    var workoutName: String
+    let durationMinutes: Int = 45
+    let difficulty: String = "Interm."
+    let calories: Int = 320
+    let stakeAmount: Double = 80.0
+
+    // MARK: Exercise list
+
+    var exercises: [Exercise] = []
+
+    // MARK: Loading state
+
+    var isLoading: Bool = false
 
     // MARK: Progress (0.0 → 1.0)
 
@@ -48,47 +56,65 @@ final class WorkoutDetailViewModel {
 
     // MARK: Init
 
-    init() {
-        workoutName     = "Full Body Ignite"
-        durationMinutes = 45
-        difficulty      = "Interm."
-        calories        = 320
-        stakeAmount     = 5.00
-        exercises = [
-            Exercise(
-                id: UUID(),
-                name: "Barbell Squat",
-                sets: 4, reps: 10, repUnit: "Reps",
-                imageName: "exercise.squat",
-                sfSymbol: "figure.strengthtraining.traditional"
-            ),
-            Exercise(
-                id: UUID(),
-                name: "Bench Press",
-                sets: 3, reps: 12, repUnit: "Reps",
-                imageName: "exercise.bench",
-                sfSymbol: "figure.strengthtraining.traditional"
-            ),
-            Exercise(
-                id: UUID(),
-                name: "Bent Over Rows",
-                sets: 3, reps: 12, repUnit: "Reps",
-                imageName: "exercise.rows",
-                sfSymbol: "figure.strengthtraining.traditional"
-            ),
-            Exercise(
-                id: UUID(),
-                name: "Plank",
-                sets: 3, reps: 60, repUnit: "Secs",
-                imageName: "exercise.plank",
-                sfSymbol: "figure.core.training"
-            ),
-        ]
+    init(workoutId: String, workoutName: String) {
+        self.workoutId = workoutId
+        self.workoutName = workoutName
     }
 
     // MARK: Computed helpers
 
     var progressPercent: String { "\(Int(progress * 100))%" }
     var movementsLabel: String  { "\(exercises.count) Movements" }
-    var stakeLabel: String      { String(format: "$%.2f", stakeAmount) }
+    var stakeLabel: String      { String(format: "$%.0f", stakeAmount) }
+
+    // MARK: - Fetch
+
+    func fetch() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(
+            string: Config.apiBaseURL + "/api/workouts/\(workoutId)/exercises"
+        ) else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        isLoading = true
+
+        defer { isLoading = false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let exercisesArr = json["exercises"] as? [[String: Any]]
+            else { return }
+
+            let mapped: [Exercise] = exercisesArr.compactMap { ex in
+                guard let name = ex["name"] as? String else { return nil }
+                let sets = ex["sets"] as? Int ?? 3
+                let repsStr = ex["reps"] as? String ?? "10"
+                let idString = ex["id"] as? String ?? ""
+
+                return Exercise(
+                    id: UUID(uuidString: idString) ?? UUID(),
+                    name: name,
+                    sets: sets,
+                    reps: repsStr,
+                    repUnit: "Reps",
+                    imageName: "",
+                    sfSymbol: "figure.strengthtraining.traditional"
+                )
+            }
+
+            if !mapped.isEmpty {
+                exercises = mapped
+            }
+        } catch {
+            // Non-fatal — exercises remain empty; UI shows empty state
+        }
+    }
 }

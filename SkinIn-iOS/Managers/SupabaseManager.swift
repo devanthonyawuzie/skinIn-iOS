@@ -102,7 +102,8 @@ final class SupabaseManager {
             goalWeight: Double(data.goalWeight) ?? 0,
             gymGeofencingEnabled: data.gymGeofencingEnabled,
             pushNotificationsEnabled: data.pushNotificationsEnabled,
-            healthKitEnabled: data.healthKitEnabled
+            healthKitEnabled: data.healthKitEnabled,
+            timezone: data.timezone
         )
 
         guard let url = URL(string: Config.apiBaseURL + "/api/profile/calibrate") else {
@@ -161,6 +162,7 @@ private struct ProfilePayload: Encodable {
     let gymGeofencingEnabled: Bool
     let pushNotificationsEnabled: Bool
     let healthKitEnabled: Bool
+    let timezone: String      // IANA identifier e.g. "America/New_York"
 }
 
 /// Errors specific to the profile-save flow.

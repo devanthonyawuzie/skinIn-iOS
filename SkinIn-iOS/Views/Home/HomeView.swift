@@ -44,6 +44,11 @@ struct HomeView: View {
                             graceWeeksLeft: vm.graceWeeksLeft
                         )
 
+                        if vm.cooldownActive {
+                            CooldownBanner(countdown: vm.cooldownCountdown)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        }
+
                         WeekPlanSection()
 
                         AISnudgeCard(message: vm.aiNudgeMessage)
@@ -61,6 +66,8 @@ struct HomeView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: vm.showNotifications)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.cooldownActive)
+        .task { await vm.fetchCooldownStatus() }
         // The NavigationStack in the app root hides back buttons for the home flow;
         // make sure the custom bar renders correctly even when embedded.
         .navigationBarHidden(true)
@@ -618,6 +625,64 @@ private struct NotificationRow: View {
         .background(Color.white)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(notif.title). \(notif.subtitle). \(notif.timeAgo).")
+    }
+}
+
+// MARK: - CooldownBanner
+
+/// Shows a live HH:MM:SS countdown while the 18-hour inter-workout cooldown
+/// is active. The timer runs in HomeViewModel and is driven by a 1-second
+/// server-authoritative schedule — device time is never used to compute it.
+private struct CooldownBanner: View {
+
+    let countdown: String
+
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+
+            // Lock icon
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.12))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.orange)
+            }
+            .accessibilityHidden(true)
+
+            // Text content
+            VStack(alignment: .leading, spacing: 3) {
+                Text("NEXT WORKOUT UNLOCKS IN")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.orange.opacity(0.75))
+                    .kerning(0.6)
+
+                Text(countdown)
+                    .font(.system(size: 26, weight: .black))
+                    .foregroundStyle(Color.orange)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.linear(duration: 0.25), value: countdown)
+            }
+
+            Spacer()
+
+            Image(systemName: "hourglass")
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(Color.orange.opacity(0.4))
+                .accessibilityHidden(true)
+        }
+        .padding(Spacing.md)
+        .background(Color.orange.opacity(0.07))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Next workout unlocks in \(countdown)")
     }
 }
 

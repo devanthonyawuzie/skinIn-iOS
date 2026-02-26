@@ -96,7 +96,7 @@ final class HomeViewModel {
             group: .yesterday,
             icon: "bolt.fill",
             iconColor: Color.brandGreen,
-            title: "Momentum AI Insight",
+            title: "SkinIn AI Insight",
             subtitle: "Your squat is up 10%. Add 5lbs to bench next session.",
             timeAgo: "1d ago"
         ),
@@ -120,9 +120,85 @@ final class HomeViewModel {
         ),
     ]
 
+    // MARK: - Cooldown State
+
+    /// The server-authoritative time at which the 18-hour cooldown expires.
+    /// nil when no cooldown is active.
+    var cooldownUnlocksAt: Date? = nil
+
+    /// Live HH:MM:SS string driven by the 1-second timer below.
+    /// Empty string when no cooldown is active.
+    var cooldownCountdown: String = ""
+
+    /// True while a cooldown is in progress.
+    var cooldownActive: Bool { cooldownUnlocksAt != nil }
+
+    private var cooldownTimer: Timer?
+
+    // MARK: - Cooldown Methods
+
+    /// Fetches cooldown status from the server and starts the countdown timer
+    /// if the user is still within the 18-hour window.
+    /// All time math is server-side — only the returned `unlocks_at` is used locally.
+    func fetchCooldownStatus() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workout-logs/cooldown-status") else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let isActive = json["cooldown_active"] as? Bool else { return }
+
+        if isActive,
+           let unlocksAtStr = json["unlocks_at"] as? String,
+           let unlocksAt = ISO8601DateFormatter().date(from: unlocksAtStr) {
+            await MainActor.run { beginCooldownCountdown(unlocksAt: unlocksAt) }
+        } else {
+            await MainActor.run { stopCooldownTimer() }
+        }
+    }
+
+    /// Starts (or restarts) the 1-second countdown timer.
+    /// Must be called on the main thread.
+    func beginCooldownCountdown(unlocksAt: Date) {
+        cooldownTimer?.invalidate()
+        cooldownUnlocksAt = unlocksAt
+        tickCooldown()
+        cooldownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            self.tickCooldown()
+        }
+    }
+
+    func stopCooldownTimer() {
+        cooldownTimer?.invalidate()
+        cooldownTimer = nil
+        cooldownUnlocksAt = nil
+        cooldownCountdown = ""
+    }
+
+    private func tickCooldown() {
+        guard let unlocksAt = cooldownUnlocksAt else { return }
+        let remaining = unlocksAt.timeIntervalSinceNow
+        guard remaining > 0 else {
+            stopCooldownTimer()
+            return
+        }
+        let h = Int(remaining) / 3600
+        let m = (Int(remaining) % 3600) / 60
+        let s = Int(remaining) % 60
+        cooldownCountdown = String(format: "%02d:%02d:%02d", h, m, s)
+    }
+
     // MARK: - Actions
 
     func signOut() {
+        stopCooldownTimer()
         SupabaseManager.shared.signOut()
         // The app-level router in SkinIn_iOSApp observes isAuthenticated and
         // automatically transitions back to OnboardingView / LoginView.

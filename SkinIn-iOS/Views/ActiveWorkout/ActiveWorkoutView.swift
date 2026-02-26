@@ -17,8 +17,14 @@ import SwiftUI
 
 struct ActiveWorkoutView: View {
 
-    @State private var vm = ActiveWorkoutViewModel()
+    @State private var vm: ActiveWorkoutViewModel
     @Environment(\.dismiss) private var dismiss
+
+    /// workoutId is passed in from WorkoutDetailView.
+    /// Defaults to a mock ID so previews and existing call sites still compile.
+    init(workoutId: String = "20000000-0003-0003-0000-000000000000") {
+        _vm = State(initialValue: ActiveWorkoutViewModel(workoutId: workoutId))
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -63,10 +69,23 @@ struct ActiveWorkoutView: View {
             }
 
             // MARK: Sticky bottom bar (pinned outside scroll)
-            ActiveStickyBottomBar()
+            ActiveStickyBottomBar(vm: vm, onSubmit: {
+                Task { await vm.submitLog() }
+            })
         }
         // Hide system nav bar — we draw our own
         .navigationBarHidden(true)
+        .task { await vm.fetchExercises() }
+        // Dismiss the screen when the server confirms the log was saved
+        .onChange(of: vm.submittedSuccessfully) { _, success in
+            if success { dismiss() }
+        }
+        // Cooldown or server error alert
+        .alert("Can't Submit Workout", isPresented: $vm.showSubmitError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(vm.submitError ?? "An unexpected error occurred.")
+        }
     }
 
     // MARK: - Exercise Card Router
@@ -620,6 +639,17 @@ private struct CollapsedExerciseRow: View {
 /// Pinned bottom bar: server sync indicator + Submit Log button.
 private struct ActiveStickyBottomBar: View {
 
+    let vm: ActiveWorkoutViewModel
+    let onSubmit: () -> Void
+
+    /// UTC clock string for the sync indicator — refreshes each time body re-renders.
+    private var utcTimeString: String {
+        let f = DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "HH:mm"
+        return f.string(from: Date()) + " UTC"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
 
@@ -632,7 +662,7 @@ private struct ActiveStickyBottomBar: View {
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
 
-                Text("SERVER SYNCED · 14:02 UTC")
+                Text("SERVER SYNCED · \(utcTimeString)")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(Color(white: 0.55))
             }
@@ -640,23 +670,31 @@ private struct ActiveStickyBottomBar: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Submit Log CTA — no-op for now
-            Button(action: {}) {
+            // Submit Log CTA
+            Button(action: onSubmit) {
                 HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 16, weight: .semibold))
+                    if vm.isSubmitting {
+                        ProgressView()
+                            .tint(Color.white)
+                            .scaleEffect(0.85)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 16, weight: .semibold))
 
-                    Text("Submit Log")
-                        .font(.system(size: 16, weight: .bold))
+                        Text("Submit Log")
+                            .font(.system(size: 16, weight: .bold))
+                    }
                 }
                 .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
-                .background(Color(white: 0.12))
+                .background(vm.isSubmitting ? Color(white: 0.45) : Color(white: 0.12))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+                .animation(.easeInOut(duration: 0.15), value: vm.isSubmitting)
             }
+            .disabled(vm.isSubmitting)
             .padding(.horizontal, Spacing.lg)
-            .accessibilityLabel("Submit workout log")
+            .accessibilityLabel(vm.isSubmitting ? "Submitting workout log" : "Submit workout log")
 
             Spacer(minLength: 0)
                 .frame(height: Spacing.lg)

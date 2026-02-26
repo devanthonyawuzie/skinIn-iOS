@@ -24,7 +24,7 @@ enum Config {
 
     // MARK: - API
 
-    /// Base URL for the Momentum backend REST API.
+    /// Base URL for the SkinIn backend REST API.
     /// TODO: Replace with production URL before App Store submission.
     static let apiBaseURL = "http://localhost:3000"
 

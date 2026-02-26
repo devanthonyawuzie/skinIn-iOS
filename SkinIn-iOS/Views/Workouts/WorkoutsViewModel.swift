@@ -2,8 +2,9 @@
 // SkinIn-iOS
 //
 // ViewModel for the Workouts screen.
-// Owns the weekly schedule data, week-strip day generation, and the
-// mock countdown timer display. All state is @Observable (iOS 17+).
+// Fetches the current-week workout schedule from the API and drives
+// the week-day strip, timeline rows, and cooldown timer display.
+// Architecture: MVVM — @Observable (iOS 17+). No @Published wrappers.
 
 import Foundation
 import Observation
@@ -20,13 +21,15 @@ enum WorkoutStatus {
 
 struct WorkoutSession: Identifiable {
     let id: UUID
-    let shortDay: String         // e.g. "MON, MAR 25"
+    let workoutId: String
+    let shortDay: String         // e.g. "MON, FEB 23" or "TODAY" or "DAY 3"
     let name: String
     let description: String
     let durationMinutes: Int
     let calories: Int
-    let focusArea: String        // e.g. "Cardio", "Strength"
+    let focusArea: String        // e.g. "Strength"
     let status: WorkoutStatus
+    let loggedDate: String?      // "yyyy-MM-dd" from API, nil for future workouts
 }
 
 // MARK: - WeekDayItem
@@ -47,88 +50,189 @@ final class WorkoutsViewModel {
 
     // MARK: Header State
 
-    let month: String = "MARCH"
-    let weekNumber: Int = 4
-    let completedCount: Int = 3
-    let totalCount: Int = 5
+    var month: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM"
+        return f.string(from: Date()).uppercased()
+    }
 
-    // MARK: Timer (mock — no live ticking yet)
+    var weekNumber: Int = 1
 
-    let timerDisplay: String = "14:22:05"
+    var completedCount: Int { sessions.filter { $0.status == .completed }.count }
+    var totalCount: Int { sessions.count }
+
+    // MARK: Timer / Cooldown
+
+    var cooldownActive: Bool = false
+    var hoursRemaining: Double = 0
+
+    var timerDisplay: String {
+        guard cooldownActive, hoursRemaining > 0 else { return "" }
+        let h = Int(hoursRemaining)
+        let m = Int((hoursRemaining - Double(h)) * 60)
+        if h > 0 && m > 0 { return "\(h)h \(m)m" }
+        if h > 0 { return "\(h)h" }
+        return "\(m)m"
+    }
 
     // MARK: Week Day Strip
-    // Mock "today" is Wednesday March 27, 2024.
-    // Week runs Sun Mar 24 – Sat Mar 30.
 
-    let weekDays: [WeekDayItem] = [
-        WeekDayItem(id: UUID(), abbreviation: "SUN", dayNumber: 24,
-                    isToday: false, hasCompletedWorkout: false),
-        WeekDayItem(id: UUID(), abbreviation: "MON", dayNumber: 25,
-                    isToday: false, hasCompletedWorkout: true),
-        WeekDayItem(id: UUID(), abbreviation: "TUE", dayNumber: 26,
-                    isToday: false, hasCompletedWorkout: true),
-        WeekDayItem(id: UUID(), abbreviation: "WED", dayNumber: 27,
-                    isToday: true,  hasCompletedWorkout: false),
-        WeekDayItem(id: UUID(), abbreviation: "THU", dayNumber: 28,
-                    isToday: false, hasCompletedWorkout: false),
-        WeekDayItem(id: UUID(), abbreviation: "FRI", dayNumber: 29,
-                    isToday: false, hasCompletedWorkout: false),
-        WeekDayItem(id: UUID(), abbreviation: "SAT", dayNumber: 30,
-                    isToday: false, hasCompletedWorkout: false)
-    ]
+    var weekDays: [WeekDayItem] = []
 
-    // MARK: Sessions (mock)
+    // MARK: Sessions
 
-    let sessions: [WorkoutSession] = [
-        WorkoutSession(
-            id: UUID(),
-            shortDay: "MON, MAR 25",
-            name: "Upper Body Strength",
-            description: "Build pushing and pulling strength across chest, back, and shoulders.",
-            durationMinutes: 45,
-            calories: 520,
-            focusArea: "Strength",
-            status: .completed
-        ),
-        WorkoutSession(
-            id: UUID(),
-            shortDay: "TUE, MAR 26",
-            name: "Active Recovery Yoga",
-            description: "Low-intensity mobility work to reduce soreness and improve flexibility.",
-            durationMinutes: 30,
-            calories: 150,
-            focusArea: "Recovery",
-            status: .completed
-        ),
-        WorkoutSession(
-            id: UUID(),
-            shortDay: "WED, MAR 27",
-            name: "Metabolic Burn",
-            description: "High intensity interval training to maximize calorie burn.",
-            durationMinutes: 45,
-            calories: 480,
-            focusArea: "Cardio",
-            status: .today
-        ),
-        WorkoutSession(
-            id: UUID(),
-            shortDay: "THU, MAR 28",
-            name: "Lower Body Power",
-            description: "Heavy compound movements targeting quads, hamstrings, and glutes.",
-            durationMinutes: 50,
-            calories: 540,
-            focusArea: "Strength",
-            status: .locked
-        ),
-        WorkoutSession(
-            id: UUID(),
-            shortDay: "FRI, MAR 29",
-            name: "Full Body HIIT",
-            description: "Total-body conditioning circuit for maximum metabolic output.",
-            durationMinutes: 40,
-            calories: 510,
-            focusArea: "Cardio",
-            status: .locked
+    var sessions: [WorkoutSession] = []
+
+    // MARK: Loading / Error State
+
+    var isLoading: Bool = false
+    var hasPlan: Bool = true
+    var errorMessage: String? = nil
+
+    // MARK: - Fetch
+
+    func fetch() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        isLoading = true
+        errorMessage = nil
+
+        defer { isLoading = false }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let http = response as? HTTPURLResponse
+
+            if http?.statusCode == 404 {
+                hasPlan = false
+                return
+            }
+
+            guard http?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                errorMessage = "Failed to load workouts. Please try again."
+                return
+            }
+
+            hasPlan = true
+            weekNumber = json["week_number"] as? Int ?? 1
+            cooldownActive = json["cooldown_active"] as? Bool ?? false
+            hoursRemaining = json["hours_remaining"] as? Double ?? 0
+
+            let workoutsArr = json["workouts"] as? [[String: Any]] ?? []
+
+            let logDateFormatter = DateFormatter()
+            logDateFormatter.dateFormat = "yyyy-MM-dd"
+
+            let displayFormatter = DateFormatter()
+            displayFormatter.dateFormat = "EEE, MMM d"
+
+            let mapped: [WorkoutSession] = workoutsArr.compactMap { w in
+                guard let idString = w["id"] as? String,
+                      let title = w["title"] as? String
+                else { return nil }
+
+                let description = w["description"] as? String ?? ""
+                let dayNumber = w["day_number"] as? Int ?? 0
+                let statusString = w["status"] as? String ?? ""
+                let loggedDateString = w["logged_date"] as? String
+
+                let status: WorkoutStatus
+                switch statusString {
+                case "completed": status = .completed
+                case "next":      status = .today
+                default:          status = .locked
+                }
+
+                let shortDay: String
+                switch status {
+                case .completed:
+                    if let dateStr = loggedDateString,
+                       let date = logDateFormatter.date(from: dateStr) {
+                        shortDay = displayFormatter.string(from: date).uppercased()
+                    } else {
+                        shortDay = "DAY \(dayNumber)"
+                    }
+                case .today:
+                    shortDay = "TODAY"
+                case .locked:
+                    shortDay = "DAY \(dayNumber)"
+                }
+
+                return WorkoutSession(
+                    id: UUID(),
+                    workoutId: idString,
+                    shortDay: shortDay,
+                    name: title,
+                    description: description,
+                    durationMinutes: 45,
+                    calories: 320,
+                    focusArea: "Strength",
+                    status: status,
+                    loggedDate: loggedDateString
+                )
+            }
+
+            sessions = mapped
+            weekDays = buildWeekDays()
+
+        } catch {
+            errorMessage = "Network error. Check your connection and try again."
+        }
+    }
+
+    // MARK: - Build Week Days
+
+    private func buildWeekDays() -> [WeekDayItem] {
+        let calendar = Calendar.current
+
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
+            return []
+        }
+
+        let logDateFormatter = DateFormatter()
+        logDateFormatter.dateFormat = "yyyy-MM-dd"
+
+        let matchFormatter = DateFormatter()
+        matchFormatter.dateFormat = "yyyy-MM-dd"
+
+        let abbrevFormatter = DateFormatter()
+        abbrevFormatter.dateFormat = "EEE"
+
+        let loggedDates: Set<String> = Set(
+            sessions.compactMap { $0.loggedDate }
         )
-    ]
+
+        var items: [WeekDayItem] = []
+        var current = weekInterval.start
+
+        while current < weekInterval.end {
+            let dayNumber = calendar.component(.day, from: current)
+            let isToday = calendar.isDateInToday(current)
+            let dateKey = matchFormatter.string(from: current)
+            let hasCompleted = loggedDates.contains(dateKey)
+            let abbreviation = abbrevFormatter.string(from: current).uppercased()
+
+            items.append(WeekDayItem(
+                id: UUID(),
+                abbreviation: abbreviation,
+                dayNumber: dayNumber,
+                isToday: isToday,
+                hasCompletedWorkout: hasCompleted
+            ))
+
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+
+        return items
+    }
 }

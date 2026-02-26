@@ -16,6 +16,8 @@ struct WorkoutsView: View {
 
     @State private var vm = WorkoutsViewModel()
     @State private var showWorkoutDetail = false
+    @State private var selectedWorkoutId: String = ""
+    @State private var selectedWorkoutName: String = ""
 
     private let background = Color(red: 0.96, green: 0.96, blue: 0.96)
 
@@ -37,22 +39,40 @@ struct WorkoutsView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
 
-                            // Section header
-                            ScheduleHeader(
-                                completedCount: vm.completedCount,
-                                totalCount: vm.totalCount
-                            )
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.top, Spacing.md)
-                            .padding(.bottom, Spacing.sm)
+                            if vm.isLoading && vm.sessions.isEmpty {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, Spacing.xl)
+                            } else if !vm.hasPlan && !vm.isLoading {
+                                Text("Your workout plan is being generated. This usually takes a minute after payment.")
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundStyle(Color(white: 0.55))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, Spacing.xl)
+                                    .padding(.top, Spacing.xl)
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                // Section header
+                                ScheduleHeader(
+                                    completedCount: vm.completedCount,
+                                    totalCount: vm.totalCount
+                                )
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.top, Spacing.md)
+                                .padding(.bottom, Spacing.sm)
 
-                            // Timeline
-                            WorkoutsTimeline(
-                                sessions: vm.sessions,
-                                timerDisplay: vm.timerDisplay,
-                                onStartWorkout: { showWorkoutDetail = true }
-                            )
-                            .padding(.horizontal, Spacing.md)
+                                // Timeline
+                                WorkoutsTimeline(
+                                    sessions: vm.sessions,
+                                    timerDisplay: vm.timerDisplay,
+                                    onStartWorkout: { session in
+                                        selectedWorkoutId = session.workoutId
+                                        selectedWorkoutName = session.name
+                                        showWorkoutDetail = true
+                                    }
+                                )
+                                .padding(.horizontal, Spacing.md)
+                            }
 
                             // Bottom clearance for custom tab bar
                             Spacer(minLength: 80)
@@ -60,9 +80,10 @@ struct WorkoutsView: View {
                     }
                 }
             }
+            .task { await vm.fetch() }
             .navigationBarHidden(true)
             .navigationDestination(isPresented: $showWorkoutDetail) {
-                WorkoutDetailView()
+                WorkoutDetailView(workoutId: selectedWorkoutId, workoutName: selectedWorkoutName)
             }
         }
     }
@@ -231,7 +252,7 @@ private struct WorkoutsTimeline: View {
 
     let sessions: [WorkoutSession]
     let timerDisplay: String
-    let onStartWorkout: () -> Void
+    let onStartWorkout: (WorkoutSession) -> Void
 
     var body: some View {
         // ZStack: green vertical line behind the rows.
@@ -262,7 +283,7 @@ private struct WorkoutsTimeline: View {
                             TodayCard(
                                 session: session,
                                 timerDisplay: timerDisplay,
-                                onStartWorkout: onStartWorkout
+                                onStartWorkout: { onStartWorkout(session) }
                             )
                         case .locked:
                             LockedRow(session: session)

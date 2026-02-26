@@ -15,9 +15,18 @@ import SwiftUI
 
 struct WorkoutDetailView: View {
 
-    @State private var vm = WorkoutDetailViewModel()
+    let workoutId: String
+    let workoutName: String
+
+    @State private var vm: WorkoutDetailViewModel
     @State private var showActiveWorkout = false
     @Environment(\.dismiss) private var dismiss
+
+    init(workoutId: String, workoutName: String) {
+        self.workoutId = workoutId
+        self.workoutName = workoutName
+        _vm = State(initialValue: WorkoutDetailViewModel(workoutId: workoutId, workoutName: workoutName))
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -49,13 +58,19 @@ struct WorkoutDetailView: View {
                     )
 
                     // Exercise list
-                    ExercisesSection(
-                        exercises: vm.exercises,
-                        movementsLabel: vm.movementsLabel
-                    ) { exercise in
-                        // Thumbnail tap → open video preview sheet
-                        vm.selectedExercise = exercise
-                        vm.showVideoPreview = true
+                    if vm.isLoading && vm.exercises.isEmpty {
+                        ProgressView()
+                            .padding(.top, Spacing.xl)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        ExercisesSection(
+                            exercises: vm.exercises,
+                            movementsLabel: vm.movementsLabel
+                        ) { exercise in
+                            // Thumbnail tap → open video preview sheet
+                            vm.selectedExercise = exercise
+                            vm.showVideoPreview = true
+                        }
                     }
 
                     // Bottom clearance so sticky footer never overlaps content
@@ -68,7 +83,10 @@ struct WorkoutDetailView: View {
         }
         // Hide the system NavigationStack bar — we use our own
         .navigationBarHidden(true)
-        .navigationDestination(isPresented: $showActiveWorkout) { ActiveWorkoutView() }
+        .task { await vm.fetch() }
+        .navigationDestination(isPresented: $showActiveWorkout) {
+            ActiveWorkoutView(workoutId: vm.workoutId)
+        }
         // Video preview sheet — presented from the vm flag
         .sheet(isPresented: Binding(
             get: { vm.showVideoPreview },
@@ -537,6 +555,6 @@ struct ExerciseVideoPreviewSheet: View {
 
 #Preview {
     NavigationStack {
-        WorkoutDetailView()
+        WorkoutDetailView(workoutId: "preview-id", workoutName: "Preview Workout")
     }
 }

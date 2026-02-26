@@ -33,6 +33,11 @@ final class SetupViewModel {
     /// "Male", "Female", or "Other"
     var sex: String = "Male"
 
+    /// IANA timezone identifier captured once at onboarding (e.g. "America/New_York").
+    /// Stored server-side as the single source of truth for all eligibility math.
+    /// Device timezone changes after sign-up are ignored — UTC is always used.
+    let timezone: String = TimeZone.current.identifier
+
     // MARK: Step 2 — Goals
 
     var goal: Goal? = nil

@@ -68,7 +68,7 @@ struct SetupLoadingView: View {
                         .tint(Color.brandGreen)
                         .accessibilityLabel("Loading")
 
-                    Text("Setting up your Momentum...")
+                    Text("Setting up your SkinIn...")
                         .font(.sectionHeadline)
                         .foregroundStyle(Color.black)
                         .multilineTextAlignment(.center)

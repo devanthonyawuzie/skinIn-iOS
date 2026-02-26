@@ -34,11 +34,11 @@ struct OnboardingPage3View: View {
                 Color.clear.frame(height: 300)
             }
 
-            // MOMENTUM badge — top-leading
-            MomentumBadge()
+            // SkinIn badge — top-leading
+            SkinInBadge()
                 .padding(.top, Spacing.xl + Spacing.lg)
                 .padding(.leading, Spacing.lg)
-                .accessibilityLabel("Momentum app badge")
+                .accessibilityLabel("SkinIn app badge")
 
             // Bottom card with CTA
             BottomCard {

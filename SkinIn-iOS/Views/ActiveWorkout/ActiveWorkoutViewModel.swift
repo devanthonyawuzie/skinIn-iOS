@@ -10,6 +10,7 @@
 // methods handle).
 
 import Foundation
+import SwiftUI
 
 // MARK: - SetEntry
 
@@ -44,15 +45,34 @@ final class ActiveWorkoutViewModel {
     let weekNumber: Int = 4
     let targetMinutes: Int = 60
 
+    /// The UUID of the workout being logged. Passed in from WorkoutDetailView;
+    /// defaults to a mock ID so previews and existing call sites still compile.
+    let workoutId: String
+
     // MARK: Timer — static mock value for now (45:12 elapsed)
     var elapsedSeconds: Int = 2712
 
     // MARK: Exercise list
     var exercises: [ActiveExercise]
 
+    // MARK: Submission State
+
+    /// True while the POST /api/workout-logs request is in-flight.
+    var isSubmitting: Bool = false
+
+    /// Set to true on a 201 response — observed by the View to trigger dismiss.
+    var submittedSuccessfully: Bool = false
+
+    /// Populated on any non-201 response. Drives the error alert.
+    var submitError: String? = nil
+
+    /// Controls the error alert sheet.
+    var showSubmitError: Bool = false
+
     // MARK: Init
 
-    init() {
+    init(workoutId: String = "20000000-0003-0003-0000-000000000000") {
+        self.workoutId = workoutId
         exercises = [
             // 1. Barbell Squat — all sets done, card completed
             ActiveExercise(
@@ -180,5 +200,124 @@ final class ActiveWorkoutViewModel {
               let sIdx = exercises[eIdx].sets.firstIndex(where: { $0.id == setId })
         else { return }
         exercises[eIdx].sets[sIdx].reps = value
+    }
+
+    // MARK: - Fetch Exercises
+
+    func fetchExercises() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/\(workoutId)/exercises") else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let exercisesArr = json["exercises"] as? [[String: Any]],
+                  !exercisesArr.isEmpty else { return }
+
+            let mapped = exercisesArr.enumerated().compactMap { index, ex -> ActiveExercise? in
+                guard let name = ex["name"] as? String else { return nil }
+                let targetSets = ex["sets"] as? Int ?? 3
+                let repsStr = ex["reps"] as? String ?? "10"
+
+                let sets = (1...targetSets).map { setNum in
+                    SetEntry(id: UUID(), setNumber: setNum, weightLbs: "0", reps: repsStr, isDone: false)
+                }
+
+                return ActiveExercise(
+                    id: UUID(),
+                    name: name,
+                    category: "WORKOUT",
+                    targetSets: targetSets,
+                    targetRepsRange: "\(repsStr) Reps",
+                    sets: sets,
+                    isExpanded: index == 0,
+                    isCompleted: false
+                )
+            }
+
+            if !mapped.isEmpty {
+                exercises = mapped
+            }
+        } catch {
+            // Non-fatal — keep mock exercises as fallback
+        }
+    }
+
+    // MARK: - Submit Log
+
+    /// POSTs the completed workout to the server.
+    ///
+    /// On success (201): sets `submittedSuccessfully = true` — the View observes
+    ///   this and calls `dismiss()`.
+    /// On cooldown (429): parses `hours_remaining` and surfaces a user-readable
+    ///   countdown in `submitError`.
+    /// On any other error: populates `submitError` with the server message.
+    ///
+    /// All checks are server-side. Device time is never used to pre-validate.
+    func submitLog() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        submitError = nil
+
+        defer { isSubmitting = false }
+
+        // Retrieve the JWT stored at sign-in
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else {
+            submitError = "You are not signed in. Please sign in and try again."
+            showSubmitError = true
+            return
+        }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workout-logs") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["workout_id": workoutId])
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let http = response as? HTTPURLResponse
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+
+            switch http?.statusCode {
+            case 201:
+                submittedSuccessfully = true
+
+            case 429:
+                // Cooldown active — format remaining time as HHh MMm
+                if let hrs = json?["hours_remaining"] as? Double {
+                    let h = Int(hrs)
+                    let m = Int((hrs - Double(h)) * 60)
+                    let parts = [h > 0 ? "\(h)h" : nil, m > 0 ? "\(m)m" : nil]
+                    let formatted = parts.compactMap { $0 }.joined(separator: " ")
+                    submitError = "Next workout unlocks in \(formatted.isEmpty ? "a moment" : formatted)."
+                } else {
+                    submitError = json?["error"] as? String ?? "Too soon since your last workout."
+                }
+                showSubmitError = true
+
+            case 403:
+                submitError = json?["error"] as? String ?? "Subscription issue. Please contact support."
+                showSubmitError = true
+
+            default:
+                submitError = json?["error"] as? String ?? "Failed to submit workout. Please try again."
+                showSubmitError = true
+            }
+        } catch {
+            submitError = "Network error. Check your connection and try again."
+            showSubmitError = true
+        }
     }
 }

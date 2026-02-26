@@ -180,7 +180,7 @@ private struct AIBubble: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            // Momentum avatar
+            // SkinIn avatar
             ZStack {
                 Circle()
                     .fill(Color(red: 0.08, green: 0.20, blue: 0.08))

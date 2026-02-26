@@ -1,7 +1,7 @@
 // Views/Onboarding/OnboardingPage2View.swift
 // SkinIn-iOS
 //
-// Onboarding page 2: "Meet Momentum"
+// Onboarding page 2: "Meet SkinIn"
 // Pure layout — no logic.
 
 import SwiftUI
@@ -34,12 +34,12 @@ struct OnboardingPage2View: View {
                 Group {
                     Text("Meet ")
                         .foregroundStyle(Color.black)
-                    + Text("Momentum")
+                    + Text("SkinIn")
                         .foregroundStyle(Color.brandGreen)
                 }
                 .font(.displayHeadline)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Meet Momentum")
+                .accessibilityLabel("Meet SkinIn")
 
                 Text("Your AI-powered coach that keeps you accountable, motivated, and on track every single day.")
                     .font(.bodyRegular)

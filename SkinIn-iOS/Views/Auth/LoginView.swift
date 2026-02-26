@@ -24,7 +24,7 @@ struct LoginView: View {
                 VStack(spacing: 0) {
                     // MARK: Header
                     VStack(spacing: Spacing.md) {
-                        MomentumBadge()
+                        SkinInBadge()
                             .padding(.top, Spacing.xxl)
 
                         Text("Welcome Back")
