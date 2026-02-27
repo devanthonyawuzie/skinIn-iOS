@@ -18,15 +18,20 @@ struct WorkoutDetailView: View {
     let workoutId: String
     let workoutName: String
     let variation: Int
+    let cooldownActive: Bool
+    let cooldownCountdown: String  // e.g. "14h 30m" — empty when no cooldown
 
     @State private var vm: WorkoutDetailViewModel
     @State private var showActiveWorkout = false
     @Environment(\.dismiss) private var dismiss
 
-    init(workoutId: String, workoutName: String, variation: Int = 1) {
-        self.workoutId   = workoutId
-        self.workoutName = workoutName
-        self.variation   = variation
+    init(workoutId: String, workoutName: String, variation: Int = 1,
+         cooldownActive: Bool = false, cooldownCountdown: String = "") {
+        self.workoutId        = workoutId
+        self.workoutName      = workoutName
+        self.variation        = variation
+        self.cooldownActive   = cooldownActive
+        self.cooldownCountdown = cooldownCountdown
         _vm = State(initialValue: WorkoutDetailViewModel(workoutId: workoutId, workoutName: workoutName, variation: variation))
     }
 
@@ -81,7 +86,11 @@ struct WorkoutDetailView: View {
             }
 
             // MARK: Sticky bottom bar (pinned outside scroll)
-            StickyBottomBar(onStart: { showActiveWorkout = true })
+            StickyBottomBar(
+                cooldownActive:    cooldownActive,
+                cooldownCountdown: cooldownCountdown,
+                onStart:           { showActiveWorkout = true }
+            )
         }
         // Hide the system NavigationStack bar — we use our own
         .navigationBarHidden(true)
@@ -419,23 +428,54 @@ private struct ExerciseThumbnail: View {
 
 private struct StickyBottomBar: View {
 
+    let cooldownActive: Bool
+    let cooldownCountdown: String
     let onStart: () -> Void
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
 
-            // START WORKOUT CTA button — navigates to ActiveWorkoutView
-            Button(action: onStart) {
-                Text("▶  START WORKOUT")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color.brandGreen)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+            if cooldownActive {
+                // Cooldown banner
+                VStack(spacing: 2) {
+                    Text("Next workout unlocks in")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.55))
+                    Text(cooldownCountdown.isEmpty ? "a moment" : cooldownCountdown)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.black)
+                }
+                .padding(.top, Spacing.xs)
+
+                // Locked button — visually disabled
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("WORKOUT LOCKED")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                .foregroundStyle(Color(white: 0.55))
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+                .background(Color(white: 0.92))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+                .padding(.horizontal, Spacing.lg)
+                .accessibilityLabel("Workout locked. \(cooldownCountdown.isEmpty ? "" : "Unlocks in \(cooldownCountdown).")")
+
+            } else {
+                // START WORKOUT CTA
+                Button(action: onStart) {
+                    Text("▶  START WORKOUT")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(Color.brandGreen)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+                }
+                .padding(.horizontal, Spacing.lg)
+                .accessibilityLabel("Start workout")
             }
-            .padding(.horizontal, Spacing.lg)
-            .accessibilityLabel("Start workout")
         }
         .padding(.bottom, Spacing.lg)
         .background(Color.white)

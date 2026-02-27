@@ -93,7 +93,13 @@ struct WorkoutsView: View {
             .task { await vm.fetch() }
             .navigationBarHidden(true)
             .navigationDestination(isPresented: $showWorkoutDetail) {
-                WorkoutDetailView(workoutId: selectedWorkoutId, workoutName: selectedWorkoutName, variation: selectedVariation)
+                WorkoutDetailView(
+                    workoutId:         selectedWorkoutId,
+                    workoutName:       selectedWorkoutName,
+                    variation:         selectedVariation,
+                    cooldownActive:    vm.cooldownActive,
+                    cooldownCountdown: vm.timerDisplay
+                )
             }
         }
     }
