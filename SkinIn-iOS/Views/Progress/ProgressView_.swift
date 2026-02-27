@@ -6,6 +6,7 @@
 
 import SwiftUI
 import Charts
+import PhotosUI
 
 // MARK: - ProgressView_
 
@@ -32,6 +33,10 @@ struct ProgressView_: View {
                             .padding(.top, Spacing.md)
 
                         DetailedMetricsSection(vm: vm)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.top, Spacing.lg)
+
+                        PhotoProgressSection(vm: vm)
                             .padding(.horizontal, Spacing.lg)
                             .padding(.top, Spacing.lg)
 
@@ -509,6 +514,224 @@ private struct ProgressStatCard: View {
         .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(stat.label): \(stat.value) \(stat.subtitle)")
+    }
+}
+
+// MARK: - PhotoProgressSection
+
+private struct PhotoProgressSection: View {
+
+    var vm: ProgressViewModel
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var fullScreenPhoto: ProgressPhotoMeta?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+
+            // Header
+            HStack(alignment: .center) {
+                Text("PHOTO PROGRESS")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color(white: 0.55))
+                    .kerning(0.8)
+                    .accessibilityAddTraits(.isHeader)
+
+                Spacer()
+
+                PhotosPicker(selection: $pickerItem, matching: .images) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Add")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.brandGreen)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.brandGreen.opacity(0.10))
+                    .clipShape(Capsule())
+                }
+                .accessibilityLabel("Add progress photo")
+            }
+            .padding(.bottom, Spacing.sm)
+
+            // Horizontal scroll
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: Spacing.sm) {
+                    if vm.progressPhotos.isEmpty {
+                        EmptyPhotoCard()
+                    }
+
+                    ForEach(vm.progressPhotos) { meta in
+                        ProgressPhotoCard(
+                            meta: meta,
+                            image: vm.loadImage(filename: meta.filename)
+                        )
+                        .onTapGesture { fullScreenPhoto = meta }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                vm.deletePhoto(meta.id)
+                            } label: {
+                                Label("Delete Photo", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .padding(.bottom, 4) // room for shadow
+            }
+        }
+        .onChange(of: pickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    vm.addPhoto(image)
+                }
+                pickerItem = nil
+            }
+        }
+        .sheet(item: $fullScreenPhoto) { meta in
+            PhotoFullScreenView(
+                meta: meta,
+                image: vm.loadImage(filename: meta.filename),
+                onDelete: {
+                    vm.deletePhoto(meta.id)
+                    fullScreenPhoto = nil
+                }
+            )
+        }
+    }
+}
+
+// MARK: - EmptyPhotoCard
+
+private struct EmptyPhotoCard: View {
+    var body: some View {
+        VStack(spacing: Spacing.sm) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(Color(white: 0.72))
+
+            Text("Add your\nfirst photo")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(white: 0.55))
+                .multilineTextAlignment(.center)
+        }
+        .frame(width: 110, height: 130)
+        .background(Color(white: 0.93))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("No progress photos yet. Tap Add to get started.")
+    }
+}
+
+// MARK: - ProgressPhotoCard
+
+private struct ProgressPhotoCard: View {
+
+    let meta: ProgressPhotoMeta
+    let image: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+
+            // Thumbnail
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color(white: 0.90)
+                        .overlay {
+                            Image(systemName: "photo")
+                                .foregroundStyle(Color(white: 0.68))
+                        }
+                }
+            }
+            .frame(width: 110, height: 130)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            // Week label
+            Text("Week \(meta.weekNumber)")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.black)
+                .lineLimit(1)
+
+            // Date
+            Text(meta.date, format: .dateTime.month(.abbreviated).day().year())
+                .font(.system(size: 10))
+                .foregroundStyle(Color(white: 0.55))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Progress photo, Week \(meta.weekNumber)")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+// MARK: - PhotoFullScreenView
+
+private struct PhotoFullScreenView: View {
+
+    let meta: ProgressPhotoMeta
+    let image: UIImage?
+    let onDelete: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var showDeleteAlert = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .ignoresSafeArea(edges: .bottom)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 48))
+                        .foregroundStyle(Color(white: 0.35))
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.black.opacity(0.6), for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 1) {
+                        Text("Week \(meta.weekNumber)")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color.white)
+                        Text(meta.date, format: .dateTime.month().day().year())
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(white: 0.65))
+                    }
+                }
+
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                        .foregroundStyle(Color.white)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showDeleteAlert = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(Color(red: 1.0, green: 0.23, blue: 0.19))
+                    }
+                    .accessibilityLabel("Delete photo")
+                }
+            }
+            .alert("Delete Photo?", isPresented: $showDeleteAlert) {
+                Button("Delete", role: .destructive) { onDelete() }
+                Button("Cancel",  role: .cancel)     { }
+            } message: {
+                Text("This photo will be permanently removed from your device.")
+            }
+        }
     }
 }
 

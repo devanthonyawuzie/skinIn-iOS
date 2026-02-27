@@ -2,11 +2,12 @@
 // SkinIn-iOS
 //
 // ViewModel for the Progress tab.
-// Owns weight trend data, body-area radar state, and summary metrics.
-// All radar and stat values are derived from real API data via fetchProgressData().
+// Owns weight trend data, body-area radar state, summary metrics, and
+// local progress photo management (stored in app Documents — no backend needed).
 
 import Foundation
 import Observation
+import UIKit
 
 // MARK: - TimeRange
 
@@ -27,7 +28,7 @@ struct WeightDataPoint: Identifiable {
 
 // MARK: - BodyAreaStat
 
-/// One axis on the strength radar. radarValue is 0.0–1.0 based on
+/// One axis on the body radar. radarValue is 0.0–1.0 based on
 /// how many workouts targeting this area have been logged this week.
 struct BodyAreaStat: Identifiable {
     let id: UUID
@@ -44,6 +45,17 @@ struct ProgressStat: Identifiable {
     let subtitle: String
 }
 
+// MARK: - ProgressPhotoMeta
+
+/// Lightweight metadata stored in UserDefaults.
+/// The actual JPEG lives on disk at ProgressPhotos/<filename>.
+struct ProgressPhotoMeta: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let filename: String
+    let weekNumber: Int
+}
+
 // MARK: - ProgressViewModel
 
 @Observable
@@ -57,13 +69,12 @@ final class ProgressViewModel {
 
     // MARK: Real data (from API)
 
-    var totalStake: Double = 0.0
-    var currentWeek: Int   = 1
+    var totalStake: Double     = 0.0
+    var currentWeek: Int       = 1
     var completedThisWeek: Int = 0
     var totalThisWeek: Int     = 4
 
     // Day-level completion flags — used to compute body area radar values.
-    // True when the workout for that day_number is status == "completed".
     var day1Done: Bool = false
     var day2Done: Bool = false
     var day3Done: Bool = false
@@ -93,14 +104,6 @@ final class ProgressViewModel {
     //   Day 2 — Lower A: quads/glutes + core
     //   Day 3 — Upper B: back/biceps (pull) + rear delts
     //   Day 4 — Lower B: hamstrings/glutes + core
-    //
-    // Each axis normalised to 0.0–1.0:
-    //   CHEST     = day1 (1 source)
-    //   BACK      = day3 (1 source)
-    //   LEGS      = day2 × 0.5 + day4 × 0.5   (2 sources)
-    //   SHOULDERS = day1 × 0.8 + day3 × 0.2   (primary + rear-delt top-up)
-    //   ARMS      = day1 × 0.5 + day3 × 0.5   (triceps + biceps)
-    //   CORE      = day2 × 0.5 + day4 × 0.5   (2 sources)
 
     var bodyAreas: [BodyAreaStat] {
         [
@@ -119,7 +122,6 @@ final class ProgressViewModel {
         ]
     }
 
-    /// Clockwise axis order starting from the top of the radar chart.
     var radarOrder: [String] {
         ["CHEST", "BACK", "LEGS", "SHOULDERS", "ARMS", "CORE"]
     }
@@ -144,9 +146,76 @@ final class ProgressViewModel {
         ]
     }
 
+    // MARK: - Photo Progress
+
+    private static let photosMetaKey = "skinin_progress_photos_meta"
+
+    private static var photosDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory,
+                                            in: .userDomainMask).first!
+        let dir  = docs.appendingPathComponent("ProgressPhotos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir,
+                                                 withIntermediateDirectories: true)
+        return dir
+    }
+
+    var progressPhotos: [ProgressPhotoMeta] = []
+
+    func loadPhotos() {
+        guard let data = UserDefaults.standard.data(forKey: Self.photosMetaKey),
+              let photos = try? JSONDecoder().decode([ProgressPhotoMeta].self, from: data)
+        else { return }
+        // Newest first
+        progressPhotos = photos.sorted { $0.date > $1.date }
+    }
+
+    func addPhoto(_ image: UIImage) {
+        let id       = UUID()
+        let filename = "\(id.uuidString).jpg"
+        let url      = Self.photosDirectory.appendingPathComponent(filename)
+
+        guard let data = image.jpegData(compressionQuality: 0.82) else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("[ProgressViewModel] Failed to save photo: \(error)")
+            return
+        }
+
+        let meta = ProgressPhotoMeta(
+            id:         id,
+            date:       Date(),
+            filename:   filename,
+            weekNumber: currentWeek
+        )
+        progressPhotos.insert(meta, at: 0) // newest first
+        savePhotosMetadata()
+    }
+
+    func deletePhoto(_ id: UUID) {
+        guard let meta = progressPhotos.first(where: { $0.id == id }) else { return }
+        let url = Self.photosDirectory.appendingPathComponent(meta.filename)
+        try? FileManager.default.removeItem(at: url)
+        progressPhotos.removeAll { $0.id == id }
+        savePhotosMetadata()
+    }
+
+    func loadImage(filename: String) -> UIImage? {
+        let url = Self.photosDirectory.appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private func savePhotosMetadata() {
+        guard let data = try? JSONEncoder().encode(progressPhotos) else { return }
+        UserDefaults.standard.set(data, forKey: Self.photosMetaKey)
+    }
+
     // MARK: - Fetch
 
     func fetchProgressData() async {
+        loadPhotos()
+
         guard let token = UserDefaults.standard.string(
             forKey: Config.UserDefaultsKey.supabaseSessionToken
         ) else { return }
