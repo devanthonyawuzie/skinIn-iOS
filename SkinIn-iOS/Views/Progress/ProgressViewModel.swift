@@ -2,7 +2,8 @@
 // SkinIn-iOS
 //
 // ViewModel for the Progress tab.
-// Owns weight trend data, lift metrics, radar chart state, and time-range selection.
+// Owns weight trend data, body-area radar state, and summary metrics.
+// All radar and stat values are derived from real API data via fetchProgressData().
 
 import Foundation
 import Observation
@@ -10,10 +11,10 @@ import Observation
 // MARK: - TimeRange
 
 enum TimeRange: String, CaseIterable {
-    case oneWeek    = "1W"
-    case oneMonth   = "1M"
+    case oneWeek     = "1W"
+    case oneMonth    = "1M"
     case threeMonths = "3M"
-    case ytd        = "YTD"
+    case ytd         = "YTD"
 }
 
 // MARK: - WeightDataPoint
@@ -24,18 +25,23 @@ struct WeightDataPoint: Identifiable {
     let weightLbs: Double
 }
 
-// MARK: - LiftMetric
+// MARK: - BodyAreaStat
 
-struct LiftMetric: Identifiable {
+/// One axis on the strength radar. radarValue is 0.0–1.0 based on
+/// how many workouts targeting this area have been logged this week.
+struct BodyAreaStat: Identifiable {
     let id: UUID
-    let name: String           // "BENCH PRESS", "SQUAT", etc.
-    let currentWeight: String  // "225×8", "20 reps", etc.
-    let changeLabel: String    // "+15lbs", "Same", "PR", "+2"
-    let changeTrend: Trend     // .up .neutral .pr .down
-    let radarValue: Double     // 0.0–1.0 for radar chart (week 12 score)
-    let radarValueWeek1: Double // 0.0–1.0 for radar chart (week 1 score)
+    let name: String       // "CHEST", "BACK", "LEGS", etc.
+    let radarValue: Double // 0.0–1.0
+}
 
-    enum Trend { case up, neutral, pr, down }
+// MARK: - ProgressStat
+
+struct ProgressStat: Identifiable {
+    let id: UUID
+    let label: String
+    let value: String
+    let subtitle: String
 }
 
 // MARK: - ProgressViewModel
@@ -43,28 +49,36 @@ struct LiftMetric: Identifiable {
 @Observable
 final class ProgressViewModel {
 
-    // MARK: Trend Analysis state
+    // MARK: UI state
+
     var selectedTimeRange: TimeRange = .oneMonth
-    var isTrendChartExpanded: Bool = true
+    var isTrendChartExpanded: Bool   = true
+    var isRadarChartExpanded: Bool   = true
 
-    // MARK: Radar Chart state
-    var isRadarChartExpanded: Bool = true
-    /// Name of the tapped lift for tooltip display; nil when nothing is selected.
-    var selectedRadarLift: String? = nil
+    // MARK: Real data (from API)
 
-    // MARK: Weight chart data (mock)
+    var totalStake: Double = 0.0
+    var currentWeek: Int   = 1
+    var completedThisWeek: Int = 0
+    var totalThisWeek: Int     = 4
 
-    /// Generates ~30 days of mock weight data ending at today.
-    /// Gentle downward trend from ~180 → ~176.4 lbs with slight noise.
+    // Day-level completion flags — used to compute body area radar values.
+    // True when the workout for that day_number is status == "completed".
+    var day1Done: Bool = false
+    var day2Done: Bool = false
+    var day3Done: Bool = false
+    var day4Done: Bool = false
+
+    // MARK: Weight chart data (mock until weight-tracking is added)
+
     var weightData: [WeightDataPoint] {
         let calendar = Calendar.current
-        let today = Date()
+        let today    = Date()
         return (0..<30).reversed().map { daysAgo in
-            let date = calendar.date(byAdding: .day, value: -daysAgo, to: today) ?? today
-            let base = 180.0 - (Double(30 - daysAgo) * 0.12)
-            // Deterministic noise keyed to daysAgo so data doesn't re-randomise on every view refresh.
-            let noiseSeed = Double((daysAgo * 17) % 10) / 10.0   // 0.0 … 0.9
-            let noise = noiseSeed * 0.8 - 0.4                     // −0.4 … +0.4
+            let date      = calendar.date(byAdding: .day, value: -daysAgo, to: today) ?? today
+            let base      = 180.0 - (Double(30 - daysAgo) * 0.12)
+            let noiseSeed = Double((daysAgo * 17) % 10) / 10.0
+            let noise     = noiseSeed * 0.8 - 0.4
             return WeightDataPoint(id: UUID(), date: date, weightLbs: base + noise)
         }
     }
@@ -72,21 +86,104 @@ final class ProgressViewModel {
     var avgWeeklyChange: Double { -0.8 }
     var trendLabel: String { "Consistent" }
 
-    // MARK: Lift metrics (8 lifts for radar + detail grid)
+    // MARK: Body area radar (derived from day completion flags)
+    //
+    // Mapping logic (upper/lower 4-day split):
+    //   Day 1 — Upper A: chest/shoulders (push) + triceps
+    //   Day 2 — Lower A: quads/glutes + core
+    //   Day 3 — Upper B: back/biceps (pull) + rear delts
+    //   Day 4 — Lower B: hamstrings/glutes + core
+    //
+    // Each axis normalised to 0.0–1.0:
+    //   CHEST     = day1 (1 source)
+    //   BACK      = day3 (1 source)
+    //   LEGS      = day2 × 0.5 + day4 × 0.5   (2 sources)
+    //   SHOULDERS = day1 × 0.8 + day3 × 0.2   (primary + rear-delt top-up)
+    //   ARMS      = day1 × 0.5 + day3 × 0.5   (triceps + biceps)
+    //   CORE      = day2 × 0.5 + day4 × 0.5   (2 sources)
 
-    let lifts: [LiftMetric] = [
-        LiftMetric(id: UUID(), name: "BENCH PRESS",  currentWeight: "225×8",   changeLabel: "+15lbs",  changeTrend: .up,      radarValue: 0.78, radarValueWeek1: 0.62),
-        LiftMetric(id: UUID(), name: "SQUAT",        currentWeight: "315×6",   changeLabel: "+20lbs",  changeTrend: .up,      radarValue: 0.88, radarValueWeek1: 0.70),
-        LiftMetric(id: UUID(), name: "DEADLIFT",     currentWeight: "405×5",   changeLabel: "+20lbs",  changeTrend: .up,      radarValue: 0.92, radarValueWeek1: 0.72),
-        LiftMetric(id: UUID(), name: "OHP",          currentWeight: "135×8",   changeLabel: "Same",    changeTrend: .neutral, radarValue: 0.55, radarValueWeek1: 0.55),
-        LiftMetric(id: UUID(), name: "PULL-UPS",     currentWeight: "12 reps", changeLabel: "+2",      changeTrend: .up,      radarValue: 0.60, radarValueWeek1: 0.48),
-        LiftMetric(id: UUID(), name: "LEG PRESS",    currentWeight: "450×12",  changeLabel: "PR",      changeTrend: .pr,      radarValue: 0.95, radarValueWeek1: 0.75),
-        LiftMetric(id: UUID(), name: "DIPS",         currentWeight: "20 reps", changeLabel: "+5",      changeTrend: .up,      radarValue: 0.65, radarValueWeek1: 0.50),
-        LiftMetric(id: UUID(), name: "ROWS",         currentWeight: "185×10",  changeLabel: "Same",    changeTrend: .neutral, radarValue: 0.70, radarValueWeek1: 0.70),
-    ]
+    var bodyAreas: [BodyAreaStat] {
+        [
+            BodyAreaStat(id: UUID(), name: "CHEST",
+                         radarValue: day1Done ? 1.0 : 0.0),
+            BodyAreaStat(id: UUID(), name: "BACK",
+                         radarValue: day3Done ? 1.0 : 0.0),
+            BodyAreaStat(id: UUID(), name: "LEGS",
+                         radarValue: (day2Done ? 0.5 : 0.0) + (day4Done ? 0.5 : 0.0)),
+            BodyAreaStat(id: UUID(), name: "SHOULDERS",
+                         radarValue: (day1Done ? 0.8 : 0.0) + (day3Done ? 0.2 : 0.0)),
+            BodyAreaStat(id: UUID(), name: "ARMS",
+                         radarValue: (day1Done ? 0.5 : 0.0) + (day3Done ? 0.5 : 0.0)),
+            BodyAreaStat(id: UUID(), name: "CORE",
+                         radarValue: (day2Done ? 0.5 : 0.0) + (day4Done ? 0.5 : 0.0)),
+        ]
+    }
 
-    /// Clockwise axis label order starting from the top of the radar chart.
+    /// Clockwise axis order starting from the top of the radar chart.
     var radarOrder: [String] {
-        ["BENCH PRESS", "SQUAT", "DEADLIFT", "OHP", "PULL-UPS", "LEG PRESS", "DIPS", "ROWS"]
+        ["CHEST", "BACK", "LEGS", "SHOULDERS", "ARMS", "CORE"]
+    }
+
+    // MARK: Detailed stats grid
+
+    var progressStats: [ProgressStat] {
+        let programPct = Int((Double(currentWeek - 1) / 12.0) * 100)
+        return [
+            ProgressStat(id: UUID(), label: "WORKOUTS",
+                         value: "\(completedThisWeek)/\(totalThisWeek)",
+                         subtitle: "this week"),
+            ProgressStat(id: UUID(), label: "WEEK",
+                         value: "\(currentWeek)",
+                         subtitle: "of 12"),
+            ProgressStat(id: UUID(), label: "STAKE",
+                         value: "$\(Int(totalStake))",
+                         subtitle: "protected"),
+            ProgressStat(id: UUID(), label: "PROGRAM",
+                         value: "\(programPct)%",
+                         subtitle: "complete"),
+        ]
+    }
+
+    // MARK: - Fetch
+
+    func fetchProgressData() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        await MainActor.run {
+            if let paid = json["amount_paid"] as? Double { totalStake = paid }
+            if let week = json["week_number"] as? Int    { currentWeek = week }
+
+            if let workouts = json["workouts"] as? [[String: Any]] {
+                completedThisWeek = workouts.filter {
+                    ($0["status"] as? String) == "completed"
+                }.count
+                totalThisWeek = workouts.count
+
+                day1Done = workouts.contains {
+                    $0["day_number"] as? Int == 1 && ($0["status"] as? String) == "completed"
+                }
+                day2Done = workouts.contains {
+                    $0["day_number"] as? Int == 2 && ($0["status"] as? String) == "completed"
+                }
+                day3Done = workouts.contains {
+                    $0["day_number"] as? Int == 3 && ($0["status"] as? String) == "completed"
+                }
+                day4Done = workouts.contains {
+                    $0["day_number"] as? Int == 4 && ($0["status"] as? String) == "completed"
+                }
+            }
+        }
     }
 }

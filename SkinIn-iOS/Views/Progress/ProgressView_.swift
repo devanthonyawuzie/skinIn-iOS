@@ -1,7 +1,7 @@
 // Views/Progress/ProgressView_.swift
 // SkinIn-iOS
 //
-// Progress tab — weight trend line chart, strength radar, and detailed lift metrics.
+// Progress tab — weight trend line chart, body-area strength radar, and summary metrics.
 // Named ProgressView_ to avoid collision with SwiftUI's built-in ProgressView.
 
 import SwiftUI
@@ -19,7 +19,7 @@ struct ProgressView_: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                ProgressNavBar()
+                ProgressNavBar(totalStake: vm.totalStake)
 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -41,12 +41,16 @@ struct ProgressView_: View {
                 }
             }
         }
+        .task { await vm.fetchProgressData() }
     }
 }
 
 // MARK: - ProgressNavBar
 
 private struct ProgressNavBar: View {
+
+    let totalStake: Double
+
     var body: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
@@ -63,15 +67,20 @@ private struct ProgressNavBar: View {
 
             Spacer()
 
-            Button {
-                // no-op — calendar action placeholder
-            } label: {
-                Image(systemName: "calendar")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.black)
-                    .frame(width: 44, height: 44)
+            if totalStake > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: "shield.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("$\(Int(totalStake))")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(Color.brandGreen)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.brandGreen.opacity(0.10))
+                .clipShape(Capsule())
+                .accessibilityLabel("Stake: $\(Int(totalStake)) protected")
             }
-            .accessibilityLabel("Calendar")
         }
         .frame(height: 56)
         .padding(.horizontal, Spacing.lg)
@@ -114,9 +123,7 @@ private struct TrendAnalysisSection: View {
                                         : Color(white: 0.50)
                                 )
                                 .clipShape(Capsule())
-                                .onTapGesture {
-                                    vm.selectedTimeRange = range
-                                }
+                                .onTapGesture { vm.selectedTimeRange = range }
                                 .accessibilityLabel("\(range.rawValue) time range")
                                 .accessibilityAddTraits(
                                     vm.selectedTimeRange == range ? [.isSelected] : []
@@ -164,7 +171,6 @@ private struct TrendAnalysisSection: View {
 
                         Spacer()
 
-                        // Trend label pill
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 11, weight: .bold))
@@ -180,7 +186,6 @@ private struct TrendAnalysisSection: View {
                     }
                     .padding(.horizontal, Spacing.md)
 
-                    // Line chart
                     WeightLineChart(data: vm.weightData)
                         .frame(height: 160)
                         .padding(.horizontal, Spacing.sm)
@@ -205,7 +210,6 @@ private struct WeightLineChart: View {
 
     var body: some View {
         Chart {
-            // Area fill under the line
             ForEach(data) { point in
                 AreaMark(
                     x: .value("Date", point.date),
@@ -215,7 +219,7 @@ private struct WeightLineChart: View {
                     LinearGradient(
                         colors: [
                             Color.brandGreen.opacity(0.25),
-                            Color.brandGreen.opacity(0.02)
+                            Color.brandGreen.opacity(0.02),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -224,7 +228,6 @@ private struct WeightLineChart: View {
                 .interpolationMethod(.catmullRom)
             }
 
-            // Main trend line
             ForEach(data) { point in
                 LineMark(
                     x: .value("Date", point.date),
@@ -235,7 +238,6 @@ private struct WeightLineChart: View {
                 .interpolationMethod(.catmullRom)
             }
 
-            // Tooltip annotation on the most recent data point
             if let last = data.last {
                 PointMark(
                     x: .value("Date", last.date),
@@ -284,21 +286,21 @@ private struct RadarChartSection: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header row — always visible, tappable to collapse
             HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("Strength Radar")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color.black)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Body Radar")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color.black)
 
-                Spacer()
-
-                // Legend — only shown when expanded
-                if vm.isRadarChartExpanded {
-                    HStack(spacing: 12) {
-                        LegendDot(color: Color.brandGreen.opacity(0.35), label: "Week 1")
-                        LegendDot(color: Color.brandGreen, label: "Week 12")
+                    if vm.isRadarChartExpanded {
+                        Text("grows as you log workouts")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(white: 0.55))
+                            .transition(.opacity)
                     }
                 }
+
+                Spacer()
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 14, weight: .medium))
@@ -315,59 +317,17 @@ private struct RadarChartSection: View {
                 }
             }
             .accessibilityLabel(
-                vm.isRadarChartExpanded ? "Collapse Strength Radar" : "Expand Strength Radar"
+                vm.isRadarChartExpanded ? "Collapse Body Radar" : "Expand Body Radar"
             )
             .accessibilityAddTraits(.isButton)
 
-            // Collapsible content
             if vm.isRadarChartExpanded {
-                VStack(spacing: Spacing.md) {
-                    RadarChartView(
-                        lifts: vm.lifts,
-                        order: vm.radarOrder,
-                        selectedLift: Binding(
-                            get: { vm.selectedRadarLift },
-                            set: { vm.selectedRadarLift = $0 }
-                        )
-                    )
+                RadarChartView(areas: vm.bodyAreas, order: vm.radarOrder)
                     .frame(height: 280)
                     .padding(.horizontal, Spacing.md)
-                    .accessibilityLabel("Strength radar chart showing 8 lifts")
-
-                    // Tooltip — shown when a lift dot is tapped
-                    if let liftName = vm.selectedRadarLift,
-                       let lift = vm.lifts.first(where: { $0.name == liftName }) {
-                        HStack {
-                            Spacer()
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(lift.name)
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Color(white: 0.7))
-
-                                HStack(spacing: 4) {
-                                    Text(lift.currentWeight)
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundStyle(Color.white)
-
-                                    Text(lift.changeLabel)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.brandGreen)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color(white: 0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel(
-                                "\(lift.name): \(lift.currentWeight), \(lift.changeLabel)"
-                            )
-                            Spacer()
-                        }
-                    }
-                }
-                .padding(.bottom, Spacing.md)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.bottom, Spacing.md)
+                    .accessibilityLabel("Body area radar chart showing muscle group training this week")
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(Color.white)
@@ -381,17 +341,16 @@ private struct RadarChartSection: View {
 
 struct RadarChartView: View {
 
-    let lifts: [LiftMetric]
+    let areas: [BodyAreaStat]
     let order: [String]
-    @Binding var selectedLift: String?
 
-    // MARK: - Geometry helpers (struct methods avoid local-func inference bug)
+    // MARK: Geometry helpers
 
     private func radarPoint(index: Int, fraction: Double,
                             center: CGPoint, radius: CGFloat) -> CGPoint {
-        let count = order.count
+        let count     = order.count
         let angleStep = (2 * Double.pi) / Double(count)
-        let angle = (-Double.pi / 2) + Double(index) * angleStep
+        let angle     = (-Double.pi / 2) + Double(index) * angleStep
         return CGPoint(
             x: center.x + CGFloat(cos(angle)) * radius * CGFloat(fraction),
             y: center.y + CGFloat(sin(angle)) * radius * CGFloat(fraction)
@@ -400,26 +359,23 @@ struct RadarChartView: View {
 
     private func shortLabel(_ name: String) -> String {
         switch name {
-        case "BENCH PRESS": return "BENCH"
-        case "DEADLIFT":    return "DL"
-        case "PULL-UPS":    return "PULL"
-        case "LEG PRESS":   return "LEG"
-        default:            return name
+        case "SHOULDERS": return "SHLDR"
+        default:          return name
         }
     }
 
-    // MARK: - Body
+    // MARK: Body
 
     var body: some View {
         GeometryReader { geo in
             let center      = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
             let radius      = min(geo.size.width, geo.size.height) * 0.38
-            let labelRadius = radius + 26
+            let labelRadius = radius + 28
             let count       = order.count
 
             ZStack {
                 // Background grid — 5 concentric polygons + axis spokes
-                Canvas { ctx, size in
+                Canvas { ctx, _ in
                     for level in 1...5 {
                         let frac = Double(level) / 5.0
                         var path = Path()
@@ -440,79 +396,57 @@ struct RadarChartView: View {
                     }
                 }
 
-                // Week 1 polygon
+                // Current week polygon — grows as workouts are logged
                 Canvas { ctx, _ in
-                    let values = order.compactMap { n in lifts.first { $0.name == n }?.radarValueWeek1 }
+                    let values = order.compactMap { n in
+                        areas.first { $0.name == n }?.radarValue
+                    }
+                    // Only draw if at least one workout has been logged
+                    guard values.contains(where: { $0 > 0 }) else { return }
                     var path = Path()
                     for (i, val) in values.enumerated() {
-                        let pt = radarPoint(index: i, fraction: val,
+                        // Minimum visible fraction so the polygon is never invisible
+                        let displayVal = val > 0 ? max(val, 0.05) : 0.0
+                        let pt = radarPoint(index: i, fraction: displayVal,
                                             center: center, radius: radius)
                         if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
                     }
                     path.closeSubpath()
-                    ctx.fill(path, with: .color(Color.brandGreen.opacity(0.18)))
-                    ctx.stroke(path, with: .color(Color.brandGreen.opacity(0.40)), lineWidth: 1.5)
-                }
-
-                // Week 12 polygon
-                Canvas { ctx, _ in
-                    let values = order.compactMap { n in lifts.first { $0.name == n }?.radarValue }
-                    var path = Path()
-                    for (i, val) in values.enumerated() {
-                        let pt = radarPoint(index: i, fraction: val,
-                                            center: center, radius: radius)
-                        if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
-                    }
-                    path.closeSubpath()
-                    ctx.fill(path, with: .color(Color.brandGreen.opacity(0.30)))
+                    ctx.fill(path,   with: .color(Color.brandGreen.opacity(0.28)))
                     ctx.stroke(path, with: .color(Color.brandGreen), lineWidth: 2.5)
                 }
 
-                // Vertex dots (visual)
+                // Vertex dots — only where a value > 0
                 Canvas { ctx, _ in
                     for (i, name) in order.enumerated() {
-                        guard let lift = lifts.first(where: { $0.name == name }) else { continue }
-                        let pt = radarPoint(index: i, fraction: lift.radarValue,
+                        guard let area = areas.first(where: { $0.name == name }),
+                              area.radarValue > 0 else { continue }
+                        let displayVal = max(area.radarValue, 0.05)
+                        let pt = radarPoint(index: i, fraction: displayVal,
                                             center: center, radius: radius)
-                        ctx.fill(Path(ellipseIn: CGRect(x: pt.x - 4, y: pt.y - 4,
-                                                        width: 8, height: 8)),
-                                 with: .color(Color.brandGreen))
-                    }
-                }
-
-                // Invisible tap targets
-                ForEach(Array(order.enumerated()), id: \.offset) { (i, name) in
-                    if let lift = lifts.first(where: { $0.name == name }) {
-                        let pt = radarPoint(index: i, fraction: lift.radarValue,
-                                            center: center, radius: radius)
-                        Color.clear
-                            .frame(width: 44, height: 44)
-                            .contentShape(Circle())
-                            .position(pt)
-                            .onTapGesture { selectedLift = (selectedLift == name) ? nil : name }
-                            .accessibilityLabel("\(name): \(Int(lift.radarValue * 100))% week 12")
-                            .accessibilityAddTraits(.isButton)
+                        ctx.fill(
+                            Path(ellipseIn: CGRect(x: pt.x - 4, y: pt.y - 4, width: 8, height: 8)),
+                            with: .color(Color.brandGreen)
+                        )
                     }
                 }
 
                 // Axis labels
                 ForEach(Array(order.enumerated()), id: \.offset) { (i, name) in
-                    let count2  = order.count
-                    let step    = (2 * Double.pi) / Double(count2)
+                    let step    = (2 * Double.pi) / Double(order.count)
                     let angle   = (-Double.pi / 2) + Double(i) * step
                     let labelPt = CGPoint(
                         x: center.x + CGFloat(cos(angle)) * labelRadius,
                         y: center.y + CGFloat(sin(angle)) * labelRadius
                     )
+                    let trained = (areas.first { $0.name == name }?.radarValue ?? 0) > 0
                     Text(shortLabel(name))
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(trained ? Color.brandGreen : Color(white: 0.45))
                         .position(labelPt)
                         .accessibilityHidden(true)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { selectedLift = nil }
         }
     }
 }
@@ -525,7 +459,7 @@ private struct DetailedMetricsSection: View {
 
     private let columns = [
         GridItem(.flexible(), spacing: Spacing.sm),
-        GridItem(.flexible(), spacing: Spacing.sm)
+        GridItem(.flexible(), spacing: Spacing.sm),
     ]
 
     var body: some View {
@@ -538,58 +472,35 @@ private struct DetailedMetricsSection: View {
                 .accessibilityAddTraits(.isHeader)
 
             LazyVGrid(columns: columns, spacing: Spacing.sm) {
-                ForEach(vm.lifts) { lift in
-                    LiftMetricCard(lift: lift)
+                ForEach(vm.progressStats) { stat in
+                    ProgressStatCard(stat: stat)
                 }
             }
         }
     }
 }
 
-// MARK: - LiftMetricCard
+// MARK: - ProgressStatCard
 
-private struct LiftMetricCard: View {
+private struct ProgressStatCard: View {
 
-    let lift: LiftMetric
+    let stat: ProgressStat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Name + trend dot
-            HStack {
-                Text(lift.name)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(white: 0.55))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(stat.label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color(white: 0.55))
 
-                Spacer()
-
-                Circle()
-                    .fill(trendColor(lift.changeTrend))
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-            }
-
-            // Current value
-            Text(lift.currentWeight)
-                .font(.system(size: 20, weight: .black))
+            Text(stat.value)
+                .font(.system(size: 26, weight: .black))
                 .foregroundStyle(Color.black)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
 
-            // Change label with icon
-            HStack(spacing: 4) {
-                Image(systemName: trendIcon(lift.changeTrend))
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(trendColor(lift.changeTrend))
-                    .accessibilityHidden(true)
-
-                Text(lift.changeLabel)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(trendColor(lift.changeTrend))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(trendColor(lift.changeTrend).opacity(0.12))
-                    .clipShape(Capsule())
-            }
+            Text(stat.subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(Color(white: 0.55))
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -597,51 +508,7 @@ private struct LiftMetricCard: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.field))
         .shadow(color: Color.black.opacity(0.07), radius: 6, x: 0, y: 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(lift.name): \(lift.currentWeight), \(lift.changeLabel)"
-        )
-    }
-
-    // MARK: Helpers
-
-    private func trendColor(_ trend: LiftMetric.Trend) -> Color {
-        switch trend {
-        case .up:      return Color.brandGreen
-        case .pr:      return Color.brandGreen
-        case .neutral: return Color(red: 1.0, green: 0.75, blue: 0.0)
-        case .down:    return Color(red: 1.0, green: 0.23, blue: 0.19)
-        }
-    }
-
-    private func trendIcon(_ trend: LiftMetric.Trend) -> String {
-        switch trend {
-        case .up:      return "arrow.up"
-        case .pr:      return "trophy.fill"
-        case .neutral: return "minus"
-        case .down:    return "arrow.down"
-        }
-    }
-}
-
-// MARK: - LegendDot
-
-private struct LegendDot: View {
-
-    let color: Color
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-
-            Text(label)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(Color(white: 0.55))
-        }
-        .accessibilityLabel(label)
+        .accessibilityLabel("\(stat.label): \(stat.value) \(stat.subtitle)")
     }
 }
 
