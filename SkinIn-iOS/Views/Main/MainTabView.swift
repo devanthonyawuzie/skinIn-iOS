@@ -43,8 +43,8 @@ struct MainTabView: View {
             ProgressView_()
         case .workouts:
             WorkoutsView()
-        case .skinInAI:
-            SkinInAIView()
+        case .nutrition:
+            NutritionView()
         case .profile:
             ProfileView()
         }
@@ -72,8 +72,8 @@ private struct CustomTabBar: View {
             RaisedWorkoutsButton(isSelected: selectedTab == .workouts, raisedOffset: raisedOffset)
                 .onTapGesture { selectedTab = .workouts }
 
-            TabBarItem(icon: "bubble.left.and.text.bubble.right.fill", label: "SkinIn AI", isSelected: selectedTab == .skinInAI)
-                .onTapGesture { selectedTab = .skinInAI }
+            TabBarItem(icon: "fork.knife", label: "Nutrition", isSelected: selectedTab == .nutrition)
+                .onTapGesture { selectedTab = .nutrition }
 
             TabBarItem(icon: "person.fill", label: "Profile", isSelected: selectedTab == .profile)
                 .onTapGesture { selectedTab = .profile }

@@ -54,11 +54,17 @@ final class WorkoutDetailViewModel {
     var selectedExercise: Exercise? = nil
     var showVideoPreview: Bool = false
 
+    // Variation (1–4) received from the Workouts screen — used as a query
+    // param when fetching exercises so the server returns only the user's
+    // pre-assigned exercise set.
+    let variation: Int
+
     // MARK: Init
 
-    init(workoutId: String, workoutName: String) {
-        self.workoutId = workoutId
+    init(workoutId: String, workoutName: String, variation: Int = 1) {
+        self.workoutId   = workoutId
         self.workoutName = workoutName
+        self.variation   = variation
     }
 
     // MARK: Computed helpers
@@ -75,7 +81,7 @@ final class WorkoutDetailViewModel {
         ) else { return }
 
         guard let url = URL(
-            string: Config.apiBaseURL + "/api/workouts/\(workoutId)/exercises"
+            string: Config.apiBaseURL + "/api/workouts/\(workoutId)/exercises?variation=\(variation)"
         ) else { return }
 
         var request = URLRequest(url: url)
@@ -87,14 +93,35 @@ final class WorkoutDetailViewModel {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
 
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let exercisesArr = json["exercises"] as? [[String: Any]]
-            else { return }
+            #if DEBUG
+            print("[WorkoutDetailVM] HTTP \(statusCode) for workout \(workoutId)")
+            print("[WorkoutDetailVM] Response body: \(String(data: data, encoding: .utf8) ?? "nil")")
+            #endif
+
+            guard statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                #if DEBUG
+                print("[WorkoutDetailVM] Guard failed — status \(statusCode) or JSON parse error")
+                #endif
+                return
+            }
+
+            let exercisesArr = json["exercises"] as? [[String: Any]] ?? []
+
+            #if DEBUG
+            print("[WorkoutDetailVM] exercises array count: \(exercisesArr.count)")
+            #endif
 
             let mapped: [Exercise] = exercisesArr.compactMap { ex in
-                guard let name = ex["name"] as? String else { return nil }
+                guard let name = ex["name"] as? String else {
+                    #if DEBUG
+                    print("[WorkoutDetailVM] Skipping exercise — missing name: \(ex)")
+                    #endif
+                    return nil
+                }
                 let sets = ex["sets"] as? Int ?? 3
                 let repsStr = ex["reps"] as? String ?? "10"
                 let idString = ex["id"] as? String ?? ""
@@ -110,11 +137,17 @@ final class WorkoutDetailViewModel {
                 )
             }
 
+            #if DEBUG
+            print("[WorkoutDetailVM] Mapped \(mapped.count) exercises")
+            #endif
+
             if !mapped.isEmpty {
                 exercises = mapped
             }
         } catch {
-            // Non-fatal — exercises remain empty; UI shows empty state
+            #if DEBUG
+            print("[WorkoutDetailVM] Fetch error: \(error.localizedDescription)")
+            #endif
         }
     }
 }

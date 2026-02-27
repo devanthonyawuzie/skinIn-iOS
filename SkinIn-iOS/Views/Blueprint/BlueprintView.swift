@@ -161,14 +161,76 @@ struct BlueprintView: View {
                 }
                 .transition(.opacity)
             }
+            
+            // MARK: Activating Subscription Overlay
+            // Brief overlay shown after payment while /activate completes (~200ms).
+            if vm.isActivating {
+                ZStack {
+                    Color.white.ignoresSafeArea()
+                    VStack(spacing: 24) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.brandGreen.opacity(0.12))
+                                .frame(width: 80, height: 80)
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.system(size: 36, weight: .medium))
+                                .foregroundStyle(Color.brandGreen)
+                                .accessibilityHidden(true)
+                        }
+                        VStack(spacing: 8) {
+                            Text("Starting your\nprogram...")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(Color.black)
+                                .multilineTextAlignment(.center)
+                            Text("Almost there")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color(white: 0.55))
+                        }
+                        ProgressView()
+                            .tint(Color.brandGreen)
+                            .scaleEffect(1.3)
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(100)
+            }
         }
         .navigationBarBackButtonHidden(true)
+        .alert("Activation Failed", isPresented: Binding(
+            get: { vm.activationError != nil },
+            set: { if !$0 { vm.activationError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(vm.activationError ?? "")
+        }
         .sheet(isPresented: $showPaymentSheet) {
-            PaymentView(onSuccess: {
+            PaymentView(onSuccess: { paymentIntentId in
+                // Dismiss payment sheet immediately
                 showPaymentSheet = false
-                // Save generated plan to DB in background — non-blocking
-                Task { await vm.savePlan() }
-                onComplete()
+
+                // Activate the subscription (fast — just creates subscription row)
+                Task {
+                    #if DEBUG
+                    print("[BlueprintView] Payment successful, activating subscription…")
+                    #endif
+
+                    let activated = await vm.activateSubscription(paymentIntentId: paymentIntentId)
+
+                    await MainActor.run {
+                        if activated {
+                            #if DEBUG
+                            print("[BlueprintView] Subscription activated, navigating to home")
+                            #endif
+                            onComplete()
+                        } else {
+                            #if DEBUG
+                            print("[BlueprintView] Subscription activation failed after payment")
+                            #endif
+                            vm.activationError = "Payment succeeded but your subscription couldn't be activated. Please contact support."
+                        }
+                    }
+                }
             })
         }
         .task { await vm.generatePlan() }
@@ -410,18 +472,33 @@ struct BlueprintView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // CTA button — opens the payment sheet; onComplete is called only after successful payment
+            // CTA button — disabled until plan + exercises are ready
             Button(action: { showPaymentSheet = true }) {
                 Text("Pay & Start Training Now\u{2192}")
                     .font(.buttonLabel)
                     .foregroundStyle(Color.black)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(Color.brandGreen)
+                    .background(vm.planReady ? Color.brandGreen : Color.brandGreen.opacity(0.45))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
             }
+            .disabled(!vm.planReady)
             .padding(.top, Spacing.xs)
             .accessibilityLabel("Pay and start training now")
+            .accessibilityHint(vm.planReady ? "" : "Your plan is being personalised, please wait")
+
+            // Loading indicator shown while plan is being saved + exercises generated
+            if vm.isPreparingPlan {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .tint(Color(white: 0.65))
+                        .scaleEffect(0.75)
+                    Text("Personalising your plan\u{2026}")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(white: 0.65))
+                }
+                .accessibilityLabel("Personalising your plan, please wait")
+            }
 
             // Stripe security badge
             HStack(spacing: 4) {

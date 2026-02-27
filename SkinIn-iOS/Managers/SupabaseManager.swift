@@ -9,6 +9,7 @@ import Supabase
 
 enum AuthError: LocalizedError {
     case invalidCredentials
+    case emailNotConfirmed
     case networkUnavailable
     case unknown(String)
 
@@ -16,6 +17,8 @@ enum AuthError: LocalizedError {
         switch self {
         case .invalidCredentials:
             return "Incorrect email or password. Please try again."
+        case .emailNotConfirmed:
+            return "This account email is not confirmed yet. In Supabase, confirm the user email (or enable auto-confirm) and try again."
         case .networkUnavailable:
             return "No internet connection. Check your network and try again."
         case .unknown(let message):
@@ -48,24 +51,55 @@ final class SupabaseManager {
     // MARK: - Sign In
 
     func signIn(email: String, password: String) async throws {
+        #if DEBUG
+        print("[SupabaseManager] signIn() called for email: \(email)")
+        #endif
+        
         do {
+            #if DEBUG
+            print("[SupabaseManager] Calling client.auth.signIn()...")
+            #endif
+            
             let session = try await client.auth.signIn(email: email, password: password)
+            
+            #if DEBUG
+            print("[SupabaseManager] Supabase signIn succeeded, updating local state...")
+            #endif
             UserDefaults.standard.set(
                 session.accessToken,
                 forKey: Config.UserDefaultsKey.supabaseSessionToken
             )
-            currentUserEmail = session.user.email
-            isAuthenticated = true
-            // TESTING: always restart from setup so the full flow can be reviewed.
-            // Remove this line before App Store submission.
-            UserDefaults.standard.removeObject(forKey: Config.UserDefaultsKey.hasCompletedSetup)
+            
+            // Update state on main thread to ensure UI updates
+            await MainActor.run {
+                currentUserEmail = session.user.email
+                isAuthenticated = true
+                #if DEBUG
+                print("[SkinIn][Auth] Sign in succeeded for \(email)")
+                print("[SkinIn][Auth] isAuthenticated set to true on main thread")
+                #endif
+            }
         } catch {
             let message = error.localizedDescription.lowercased()
             if message.contains("invalid") || message.contains("credentials") || message.contains("password") {
+                #if DEBUG
+                print("[SkinIn][Auth] Sign in failed: invalid credentials")
+                #endif
                 throw AuthError.invalidCredentials
+            } else if message.contains("email") && message.contains("confirm") {
+                #if DEBUG
+                print("[SkinIn][Auth] Sign in failed: email not confirmed")
+                #endif
+                throw AuthError.emailNotConfirmed
             } else if message.contains("network") || message.contains("offline") {
+                #if DEBUG
+                print("[SkinIn][Auth] Sign in failed: network unavailable")
+                #endif
                 throw AuthError.networkUnavailable
             } else {
+                #if DEBUG
+                print("[SkinIn][Auth] Sign in failed: \(error.localizedDescription)")
+                #endif
                 throw AuthError.unknown(error.localizedDescription)
             }
         }
@@ -143,6 +177,55 @@ final class SupabaseManager {
         } catch {
             UserDefaults.standard.removeObject(forKey: Config.UserDefaultsKey.supabaseSessionToken)
             isAuthenticated = false
+        }
+    }
+
+    /// Validates that the stored auth token is still accepted by the backend.
+    /// Returns false for unauthorized/forbidden responses (e.g. deleted user),
+    /// true for any non-auth response (including 200 and 404).
+    func isSessionValidOnBackend() async -> Bool {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return false }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return http.statusCode != 401 && http.statusCode != 403
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - Setup State Check
+
+    /// Returns true when the backend reports a current-week workout plan.
+    /// A 200 status implies setup/payment was previously completed.
+    func hasSavedWorkoutPlan() async -> Bool {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return false }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return http.statusCode == 200
+        } catch {
+            return false
         }
     }
 }

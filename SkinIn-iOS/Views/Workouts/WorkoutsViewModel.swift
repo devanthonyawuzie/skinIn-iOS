@@ -89,14 +89,30 @@ final class WorkoutsViewModel {
     var hasPlan: Bool = true
     var errorMessage: String? = nil
 
+    // Variation (1–4) assigned at subscription time.
+    // Returned by /api/workouts/current-week and passed to WorkoutDetailView
+    // so exercises are filtered to the user's pre-assigned variation.
+    var variation: Int = 1
+
     // MARK: - Fetch
 
     func fetch() async {
         guard let token = UserDefaults.standard.string(
             forKey: Config.UserDefaultsKey.supabaseSessionToken
-        ) else { return }
+        ) else {
+            #if DEBUG
+            print("[WorkoutsViewModel] No auth token found")
+            #endif
+            return
+        }
 
-        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else { return }
+        let urlString = Config.apiBaseURL + "/api/workouts/current-week"
+        guard let url = URL(string: urlString) else {
+            #if DEBUG
+            print("[WorkoutsViewModel] Invalid URL: \(urlString)")
+            #endif
+            return
+        }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -106,12 +122,35 @@ final class WorkoutsViewModel {
 
         defer { isLoading = false }
 
+        #if DEBUG
+        print("[WorkoutsViewModel] Fetching workouts from: \(urlString)")
+        print("[WorkoutsViewModel] Auth token present: \(!token.isEmpty)")
+        #endif
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let http = response as? HTTPURLResponse
 
+            #if DEBUG
+            print("[WorkoutsViewModel] Fetch response status: \(http?.statusCode ?? -1)")
+            if let http = http {
+                print("[WorkoutsViewModel] Response headers: \(http.allHeaderFields)")
+            }
+            #endif
+
             if http?.statusCode == 404 {
-                hasPlan = false
+                // Try to surface the backend's error message (e.g. "No active subscription found.")
+                let backendMessage = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    .flatMap { $0["error"] as? String }
+                if let backendMessage {
+                    errorMessage = backendMessage
+                } else {
+                    hasPlan = false
+                }
+                #if DEBUG
+                let responseBody = String(data: data, encoding: .utf8) ?? "no body"
+                print("[WorkoutsViewModel] 404 Response body: \(responseBody)")
+                #endif
                 return
             }
 
@@ -119,15 +158,23 @@ final class WorkoutsViewModel {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else {
                 errorMessage = "Failed to load workouts. Please try again."
+                #if DEBUG
+                print("[WorkoutsViewModel] Invalid response or JSON parse failed")
+                #endif
                 return
             }
 
             hasPlan = true
-            weekNumber = json["week_number"] as? Int ?? 1
-            cooldownActive = json["cooldown_active"] as? Bool ?? false
+            weekNumber     = json["week_number"]     as? Int    ?? 1
+            variation      = json["variation"]       as? Int    ?? 1
+            cooldownActive = json["cooldown_active"] as? Bool   ?? false
             hoursRemaining = json["hours_remaining"] as? Double ?? 0
 
             let workoutsArr = json["workouts"] as? [[String: Any]] ?? []
+            
+            #if DEBUG
+            print("[WorkoutsViewModel] Received \(workoutsArr.count) workouts from API")
+            #endif
 
             let logDateFormatter = DateFormatter()
             logDateFormatter.dateFormat = "yyyy-MM-dd"
@@ -138,7 +185,12 @@ final class WorkoutsViewModel {
             let mapped: [WorkoutSession] = workoutsArr.compactMap { w in
                 guard let idString = w["id"] as? String,
                       let title = w["title"] as? String
-                else { return nil }
+                else {
+                    #if DEBUG
+                    print("[WorkoutsViewModel] Skipping workout - missing id or title: \(w)")
+                    #endif
+                    return nil
+                }
 
                 let description = w["description"] as? String ?? ""
                 let dayNumber = w["day_number"] as? Int ?? 0
@@ -183,9 +235,16 @@ final class WorkoutsViewModel {
 
             sessions = mapped
             weekDays = buildWeekDays()
+            
+            #if DEBUG
+            print("[WorkoutsViewModel] Successfully mapped \(mapped.count) workout sessions")
+            #endif
 
         } catch {
             errorMessage = "Network error. Check your connection and try again."
+            #if DEBUG
+            print("[WorkoutsViewModel] Fetch error: \(error.localizedDescription)")
+            #endif
         }
     }
 

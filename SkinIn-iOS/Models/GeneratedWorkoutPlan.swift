@@ -13,6 +13,7 @@ struct GeneratedWorkoutPlan: Codable, Sendable {
 
     let programName: String
     let tagline: String
+    let splitType: String?
     let weeks: [GeneratedWeek]
 
     // MARK: CodingKeys
@@ -20,6 +21,7 @@ struct GeneratedWorkoutPlan: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case programName = "program_name"
         case tagline
+        case splitType = "split_type"
         case weeks
     }
 

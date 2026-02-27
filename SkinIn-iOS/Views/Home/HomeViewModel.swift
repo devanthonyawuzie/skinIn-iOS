@@ -16,20 +16,14 @@ final class HomeViewModel {
 
     // MARK: Stake State
 
-    var totalStake: Double = 150.00
-    var targetStake: Double = 200.00
-    var protectedAmount: Double = 150.00
+    var totalStake: Double = 0.00
 
     // MARK: Week Progress State
 
-    var currentWeek: Int = 4
+    var currentWeek: Int = 1
     var completedWorkouts: Int = 3
     var totalWorkoutsThisWeek: Int = 4
     var graceWeeksLeft: Int = 1
-
-    // MARK: Streak State
-
-    var streakDays: Int = 12
 
     // MARK: AI Nudge State
 
@@ -37,10 +31,9 @@ final class HomeViewModel {
 
     // MARK: Computed
 
-    /// Fractional progress of protected amount toward the staking target (0.0–1.0).
+    /// Fractional progress through the 12-week program (0.0–1.0).
     var protectionProgress: Double {
-        guard targetStake > 0 else { return 0 }
-        return min(protectedAmount / targetStake, 1.0)
+        min(Double(currentWeek) / 12.0, 1.0)
     }
 
     // MARK: - Notifications
@@ -136,6 +129,29 @@ final class HomeViewModel {
     private var cooldownTimer: Timer?
 
     // MARK: - Cooldown Methods
+
+    /// Fetches the user's subscription data (amount paid + current week) from
+    /// GET /api/workouts/current-week and updates totalStake + currentWeek.
+    func fetchSubscriptionData() async {
+        guard let token = UserDefaults.standard.string(
+            forKey: Config.UserDefaultsKey.supabaseSessionToken
+        ) else { return }
+
+        guard let url = URL(string: Config.apiBaseURL + "/api/workouts/current-week") else { return }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        await MainActor.run {
+            if let paid = json["amount_paid"] as? Double { totalStake = paid }
+            if let week = json["week_number"] as? Int    { currentWeek = week }
+        }
+    }
 
     /// Fetches cooldown status from the server and starts the countdown timer
     /// if the user is still within the 18-hour window.

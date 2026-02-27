@@ -12,6 +12,7 @@ import SwiftUI
 struct HomeView: View {
 
     @State private var vm = HomeViewModel()
+    @State private var showAI = false
 
     // Light gray background matches setup screens — not the dark appBackground.
     private let background = Color(red: 0.96, green: 0.96, blue: 0.96)
@@ -22,7 +23,7 @@ struct HomeView: View {
 
             VStack(spacing: 0) {
                 // MARK: Custom Navigation Bar
-                HomeNavBar(streakDays: vm.streakDays, onBellTap: { vm.showNotifications = true })
+                HomeNavBar(currentWeek: vm.currentWeek, onBellTap: { vm.showNotifications = true })
                     .padding(.horizontal, Spacing.md)
                     .padding(.top, Spacing.sm)
                     .padding(.bottom, Spacing.md)
@@ -33,7 +34,7 @@ struct HomeView: View {
                     VStack(spacing: Spacing.md) {
                         TotalStakeCard(
                             totalStake: vm.totalStake,
-                            targetStake: vm.targetStake,
+                            currentWeek: vm.currentWeek,
                             progress: vm.protectionProgress
                         )
 
@@ -49,12 +50,37 @@ struct HomeView: View {
                                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
                         }
 
-                        WeekPlanSection()
-
                         AISnudgeCard(message: vm.aiNudgeMessage)
                     }
                     .padding(.horizontal, Spacing.md)
-                    // 80pt bottom padding clears the 60pt custom tab bar + safe area.
+                    // 100pt bottom padding clears the 60pt custom tab bar + floating button + safe area.
+                    .padding(.bottom, 100)
+                }
+            }
+
+            // MARK: Floating AI Button
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        showAI = true
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black)
+                                .frame(width: 56, height: 56)
+                                .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+
+                            Image(systemName: "brain.head.profile")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(Color.brandGreen)
+                        }
+                    }
+                    .accessibilityLabel("SkinIn AI")
+                    .accessibilityHint("Opens the AI fitness coach")
+                    .padding(.trailing, Spacing.md)
+                    // 80pt clears the custom tab bar + safe area
                     .padding(.bottom, 80)
                 }
             }
@@ -65,9 +91,15 @@ struct HomeView: View {
                     .transition(.opacity)
             }
         }
+        .sheet(isPresented: $showAI) {
+            SkinInAIView()
+        }
         .animation(.easeInOut(duration: 0.22), value: vm.showNotifications)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.cooldownActive)
-        .task { await vm.fetchCooldownStatus() }
+        .task {
+            await vm.fetchSubscriptionData()
+            await vm.fetchCooldownStatus()
+        }
         // The NavigationStack in the app root hides back buttons for the home flow;
         // make sure the custom bar renders correctly even when embedded.
         .navigationBarHidden(true)
@@ -78,7 +110,7 @@ struct HomeView: View {
 
 private struct HomeNavBar: View {
 
-    let streakDays: Int
+    let currentWeek: Int
     let onBellTap: () -> Void
 
     var body: some View {
@@ -99,13 +131,13 @@ private struct HomeNavBar: View {
 
             Spacer()
 
-            // MARK: Streak Pill (center)
+            // MARK: Week Pill (center) — shows how many weeks completed so far
             HStack(spacing: 4) {
-                Image(systemName: "house.fill")
+                Image(systemName: "calendar")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.black)
 
-                Text("\(streakDays) Days")
+                Text("Week \(currentWeek)")
                     .font(.badgeLabel)
                     .foregroundStyle(Color.black)
             }
@@ -113,7 +145,7 @@ private struct HomeNavBar: View {
             .padding(.vertical, 6)
             .background(Color.brandGreen)
             .clipShape(Capsule())
-            .accessibilityLabel("\(streakDays) day streak")
+            .accessibilityLabel("Week \(currentWeek) of 12")
 
             Spacer()
 
@@ -137,7 +169,7 @@ private struct HomeNavBar: View {
 private struct TotalStakeCard: View {
 
     let totalStake: Double
-    let targetStake: Double
+    let currentWeek: Int
     let progress: Double
 
     private let stakeFormatter: NumberFormatter = {
@@ -183,16 +215,16 @@ private struct TotalStakeCard: View {
             Divider()
                 .padding(.vertical, Spacing.xs)
 
-            // MARK: Progress Row
+            // MARK: Progress Row — week 1 to 12
             VStack(spacing: Spacing.xs) {
                 HStack {
-                    Text("Money Protected")
+                    Text("Week 1")
                         .font(.badgeLabel)
                         .foregroundStyle(Color(white: 0.50))
 
                     Spacer()
 
-                    Text("Target: \(formatted(targetStake))")
+                    Text("Week 12")
                         .font(.badgeLabel)
                         .foregroundStyle(Color(white: 0.50))
                 }
@@ -213,8 +245,7 @@ private struct TotalStakeCard: View {
                     }
                 }
                 .frame(height: 10)
-                .accessibilityLabel("Protection progress: \(Int(progress * 100)) percent")
-                .accessibilityValue("\(formatted(totalStake)) of \(formatted(targetStake))")
+                .accessibilityLabel("Program progress: Week \(Int(progress * 12)) of 12")
             }
 
             // MARK: Refund Eligible Row

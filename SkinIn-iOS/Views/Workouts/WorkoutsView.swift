@@ -18,6 +18,7 @@ struct WorkoutsView: View {
     @State private var showWorkoutDetail = false
     @State private var selectedWorkoutId: String = ""
     @State private var selectedWorkoutName: String = ""
+    @State private var selectedVariation: Int = 1
 
     private let background = Color(red: 0.96, green: 0.96, blue: 0.96)
 
@@ -43,6 +44,14 @@ struct WorkoutsView: View {
                                 ProgressView()
                                     .frame(maxWidth: .infinity)
                                     .padding(.top, Spacing.xl)
+                            } else if let error = vm.errorMessage, !vm.isLoading {
+                                Text(error)
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundStyle(Color(white: 0.55))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, Spacing.xl)
+                                    .padding(.top, Spacing.xl)
+                                    .frame(maxWidth: .infinity)
                             } else if !vm.hasPlan && !vm.isLoading {
                                 Text("Your workout plan is being generated. This usually takes a minute after payment.")
                                     .font(.system(size: 14, weight: .regular))
@@ -66,9 +75,10 @@ struct WorkoutsView: View {
                                     sessions: vm.sessions,
                                     timerDisplay: vm.timerDisplay,
                                     onStartWorkout: { session in
-                                        selectedWorkoutId = session.workoutId
+                                        selectedWorkoutId   = session.workoutId
                                         selectedWorkoutName = session.name
-                                        showWorkoutDetail = true
+                                        selectedVariation   = vm.variation
+                                        showWorkoutDetail   = true
                                     }
                                 )
                                 .padding(.horizontal, Spacing.md)
@@ -83,7 +93,7 @@ struct WorkoutsView: View {
             .task { await vm.fetch() }
             .navigationBarHidden(true)
             .navigationDestination(isPresented: $showWorkoutDetail) {
-                WorkoutDetailView(workoutId: selectedWorkoutId, workoutName: selectedWorkoutName)
+                WorkoutDetailView(workoutId: selectedWorkoutId, workoutName: selectedWorkoutName, variation: selectedVariation)
             }
         }
     }

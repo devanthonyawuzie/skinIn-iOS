@@ -123,7 +123,7 @@ struct Step1AboutYouView: View {
                         .foregroundStyle(Color.black)
 
                     HStack(spacing: Spacing.sm) {
-                        ForEach(["Male", "Female", "Other"], id: \.self) { option in
+                        ForEach(["Male", "Female"], id: \.self) { option in
                             Button(action: { vm.sex = option }) {
                                 Text(option)
                                     .font(.system(size: 15, weight: .semibold))

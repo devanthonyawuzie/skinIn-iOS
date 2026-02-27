@@ -18,7 +18,6 @@ final class LoginViewModel {
     var password: String = ""
     var isLoading: Bool = false
     var errorMessage: String? = nil
-    var didLoginSuccessfully: Bool = false
 
     // MARK: - Validation
 
@@ -29,21 +28,49 @@ final class LoginViewModel {
     // MARK: - Actions
 
     func signIn() async {
-        guard canSubmit else { return }
+        guard canSubmit else {
+            #if DEBUG
+            print("[LoginViewModel] Cannot submit - canSubmit=false")
+            #endif
+            return
+        }
+        
+        #if DEBUG
+        print("[LoginViewModel] Starting sign in for email: \(email)")
+        #endif
+        
         errorMessage = nil
         isLoading = true
 
         do {
+            #if DEBUG
+            print("[LoginViewModel] Calling SupabaseManager.signIn()...")
+            #endif
+            
             try await SupabaseManager.shared.signIn(email: email, password: password)
-            // Navigate on the main actor after successful auth.
+            
+            #if DEBUG
+            print("[LoginViewModel] Sign in succeeded, updating UI state")
+            #endif
+            
+            // App-level routing in SkinIn_iOSApp reacts to auth state changes.
             await MainActor.run {
                 isLoading = false
-                didLoginSuccessfully = true
+                #if DEBUG
+                print("[LoginViewModel] UI state updated - isLoading=false")
+                #endif
             }
         } catch {
+            #if DEBUG
+            print("[LoginViewModel] Sign in failed with error: \(error.localizedDescription)")
+            #endif
+            
             await MainActor.run {
                 isLoading = false
                 errorMessage = error.localizedDescription
+                #if DEBUG
+                print("[LoginViewModel] Error state set - isLoading=false, errorMessage=\(error.localizedDescription)")
+                #endif
             }
         }
     }

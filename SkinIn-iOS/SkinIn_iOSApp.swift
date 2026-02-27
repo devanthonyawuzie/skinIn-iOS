@@ -2,10 +2,14 @@
 // SkinIn-iOS
 //
 // Launch routing (evaluated in priority order):
-//   authenticated + setup complete   → MainTabView  (full app shell)
-//   authenticated + setup incomplete → SetupContainerView
-//   seen onboarding (not authed)     → LoginView
-//   fresh install                    → OnboardingView  (shown once, ever)
+//   fresh install (onboarding unseen) → OnboardingView  (shown once, ever)
+//   authenticated + setup complete    → MainTabView  (full app shell)
+//   authenticated + setup incomplete  → check backend → MainTabView or SetupContainerView
+//   seen onboarding (not authed)      → LoginView
+//
+// TODO: When signup flow is implemented, restore the original auth-first
+//       routing so a newly-signed-up user is taken straight to setup
+//       without re-running the onboarding pages.
 
 import SwiftUI
 import Stripe
@@ -17,33 +21,61 @@ struct SkinIn_iOSApp: App {
     @AppStorage(Config.UserDefaultsKey.hasSeenOnboarding) private var hasSeenOnboarding = false
     @AppStorage(Config.UserDefaultsKey.hasCompletedSetup) private var hasCompletedSetup = false
 
+    // True once we've checked the backend for an existing plan.
+    // Reset to false on sign-out so the check reruns on the next login.
+    @State private var didCheckRemoteSetup = false
+
     var body: some Scene {
         WindowGroup {
             NavigationStack {
                 Group {
-                    if supabase.isAuthenticated {
-                        if hasCompletedSetup {
-                            // Full app shell — NavigationStack not needed at this level;
-                            // each tab manages its own navigation internally.
-                            MainTabView()
-                        } else {
-                            SetupContainerView(onSetupComplete: {
-                                // @AppStorage write triggers a re-render automatically.
-                                hasCompletedSetup = true
-                            })
-                        }
-                    } else if hasSeenOnboarding {
-                        LoginView()
-                    } else {
+                    if !hasSeenOnboarding {
+                        // Always show onboarding on a fresh install, even if a Supabase
+                        // session was restored from the Keychain (which survives deletion).
+                        // TODO: When signup flow is ready, remove this top-level check and
+                        //       restore the original auth-first routing below so newly
+                        //       signed-up users land directly in setup after email verify.
                         OnboardingView(onFinished: {
                             hasSeenOnboarding = true
                         })
+                    } else if supabase.isAuthenticated {
+                        if hasCompletedSetup {
+                            // Returning user with a saved plan — go straight home.
+                            MainTabView()
+                        } else if didCheckRemoteSetup {
+                            // Backend confirmed no plan exists — run setup.
+                            SetupContainerView(onSetupComplete: {
+                                hasCompletedSetup = true
+                            })
+                        } else {
+                            // Authenticated but hasCompletedSetup is false (e.g. new
+                            // device, cleared UserDefaults). Check the backend once before
+                            // deciding whether to show setup or go home.
+                            ProgressView("Loading...")
+                                .task {
+                                    if await supabase.hasSavedWorkoutPlan() {
+                                        hasCompletedSetup = true
+                                    }
+                                    didCheckRemoteSetup = true
+                                }
+                        }
+                    } else {
+                        // TODO: When signup flow is ready, add a "Don't have an account?"
+                        //       link here that navigates to the signup screen.
+                        LoginView()
                     }
                 }
             }
             .task {
                 StripeAPI.defaultPublishableKey = Config.stripePublishableKey
                 await supabase.restoreSession()
+            }
+            // Reset the remote check whenever the user signs out so it reruns
+            // on the next successful login.
+            .onChange(of: supabase.isAuthenticated) { _, isAuthenticated in
+                if !isAuthenticated {
+                    didCheckRemoteSetup = false
+                }
             }
         }
     }

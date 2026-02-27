@@ -120,6 +120,9 @@ struct LoginView: View {
                     .accessibilityLabel("Log In")
                     .accessibilityHint(vm.isLoading ? "Logging in, please wait" : "Sign in to your account")
 
+                    // TODO: Re-add "Don't have an account? Sign up" link here
+                    //       once the signup flow (email verify → Step1AboutYouView) is built.
+
                     // TODO: Apple & Google Sign In
 
                     Spacer(minLength: Spacing.xxl)
@@ -127,13 +130,6 @@ struct LoginView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
-        .navigationDestination(isPresented: $vm.didLoginSuccessfully) {
-            SetupContainerView(onSetupComplete: {
-                // SkinIn_iOSApp reacts to hasCompletedSetup via @AppStorage,
-                // so no explicit callback needed here — the root re-renders
-                // automatically and HomeView replaces the stack.
-            })
-        }
         .onTapGesture {
             // Dismiss keyboard on background tap
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

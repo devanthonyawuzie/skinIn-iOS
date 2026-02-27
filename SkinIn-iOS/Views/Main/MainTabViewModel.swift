@@ -3,7 +3,7 @@
 //
 // Owns the selected tab state for the custom tab bar shell.
 // Child feature views may receive a binding to selectedTab
-// if they need to trigger tab switches (e.g., AI nudge → SkinIn AI tab).
+// if they need to trigger tab switches.
 
 import Foundation
 import Observation
@@ -14,7 +14,7 @@ enum AppTab: Int, CaseIterable {
     case home
     case progress
     case workouts
-    case skinInAI
+    case nutrition
     case profile
 }
 

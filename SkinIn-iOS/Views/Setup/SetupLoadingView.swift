@@ -88,8 +88,15 @@ struct SetupLoadingView: View {
         .navigationDestination(isPresented: $navigateToBlueprint) {
             BlueprintView(
                 goal: vm.goal ?? .muscleGain,
-                onComplete: onSetupComplete,
-                onDismiss: onSetupComplete
+                onComplete: {
+                    // Pop BlueprintView off the stack before switching the root
+                    // to MainTabView. Without this, navigateToBlueprint stays
+                    // true and SwiftUI leaves BlueprintView on screen even after
+                    // hasCompletedSetup flips to true.
+                    navigateToBlueprint = false
+                    onSetupComplete()
+                },
+                onDismiss: { navigateToBlueprint = false }
             )
         }
         .onAppear {

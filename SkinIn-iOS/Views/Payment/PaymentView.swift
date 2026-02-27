@@ -28,9 +28,9 @@ struct PaymentView: View {
 
     // MARK: Parameters
 
-    /// Called on successful payment confirmation so the parent can dismiss the sheet
-    /// and advance the app flow.
-    let onSuccess: () -> Void
+    /// Called on successful payment confirmation with the confirmed payment intent ID.
+    /// The parent uses this ID to call /activate and create the subscription row.
+    let onSuccess: (String) -> Void
 
     // MARK: ViewModel
 
@@ -355,7 +355,9 @@ struct PaymentView: View {
                 withAnimation { paymentState = .success }
                 // Auto-advance after 2 seconds
                 try? await Task.sleep(for: .seconds(2))
-                onSuccess()
+                // Extract payment intent ID from "pi_XXXX_secret_XXXX" format
+                let paymentIntentId = clientSecret.components(separatedBy: "_secret_").first ?? ""
+                onSuccess(paymentIntentId)
             }
         } catch {
             withAnimation { paymentState = .failed(error.localizedDescription) }
@@ -492,6 +494,6 @@ private struct FailedOverlay: View {
     // Wrap in a sheet container to match real presentation context
     Color.white
         .sheet(isPresented: .constant(true)) {
-            PaymentView(onSuccess: { })
+            PaymentView(onSuccess: { _ in })
         }
 }

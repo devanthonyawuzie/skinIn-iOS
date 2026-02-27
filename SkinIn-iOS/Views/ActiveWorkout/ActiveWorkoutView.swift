@@ -173,6 +173,13 @@ private struct SessionProgressSection: View {
     let targetMinutes: Int
     let timerDisplay: String
 
+    // Red → yellow → green as the workout progresses.
+    private var progressBarColor: Color {
+        if progressFraction < 0.5 { return Color(red: 1.0, green: 0.23, blue: 0.19) }
+        if progressFraction < 0.8 { return Color(red: 1.0, green: 0.75, blue: 0.0) }
+        return Color.brandGreen
+    }
+
     var body: some View {
         VStack(spacing: 8) {
 
@@ -220,9 +227,9 @@ private struct SessionProgressSection: View {
                         .fill(Color(white: 0.88))
                         .frame(height: 8)
 
-                    // Green fill — animated on data change
+                    // Coloured fill — red → yellow → green as progress increases
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.brandGreen)
+                        .fill(progressBarColor)
                         .frame(
                             width: max(0, geo.size.width * CGFloat(progressFraction)),
                             height: 8

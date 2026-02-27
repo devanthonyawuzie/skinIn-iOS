@@ -17,15 +17,17 @@ struct WorkoutDetailView: View {
 
     let workoutId: String
     let workoutName: String
+    let variation: Int
 
     @State private var vm: WorkoutDetailViewModel
     @State private var showActiveWorkout = false
     @Environment(\.dismiss) private var dismiss
 
-    init(workoutId: String, workoutName: String) {
-        self.workoutId = workoutId
+    init(workoutId: String, workoutName: String, variation: Int = 1) {
+        self.workoutId   = workoutId
         self.workoutName = workoutName
-        _vm = State(initialValue: WorkoutDetailViewModel(workoutId: workoutId, workoutName: workoutName))
+        self.variation   = variation
+        _vm = State(initialValue: WorkoutDetailViewModel(workoutId: workoutId, workoutName: workoutName, variation: variation))
     }
 
     var body: some View {
@@ -79,7 +81,7 @@ struct WorkoutDetailView: View {
             }
 
             // MARK: Sticky bottom bar (pinned outside scroll)
-            StickyBottomBar(stakeLabel: vm.stakeLabel, onStart: { showActiveWorkout = true })
+            StickyBottomBar(onStart: { showActiveWorkout = true })
         }
         // Hide the system NavigationStack bar — we use our own
         .navigationBarHidden(true)
@@ -417,28 +419,10 @@ private struct ExerciseThumbnail: View {
 
 private struct StickyBottomBar: View {
 
-    let stakeLabel: String
     let onStart: () -> Void
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-
-            // "SKIN IN THE GAME" stake pill
-            HStack(spacing: 6) {
-                Image(systemName: "shield.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.brandGreen)
-
-                Text("SKIN IN THE GAME: \(stakeLabel)")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.black)
-            }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, 10)
-            .background(Color.brandGreen.opacity(0.15))
-            .clipShape(Capsule())
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Skin in the game: \(stakeLabel) at stake")
 
             // START WORKOUT CTA button — navigates to ActiveWorkoutView
             Button(action: onStart) {
