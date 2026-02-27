@@ -16,3 +16,6 @@ DerivedData/
 
 # App secrets — never commit credentials or API keys
 SkinIn-iOS/Config/Config.swift
+
+# Claude Code internal files
+.claude/
