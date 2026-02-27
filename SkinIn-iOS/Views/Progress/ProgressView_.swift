@@ -538,6 +538,13 @@ private struct PhotoProgressSection: View {
 
                 Spacer()
 
+                // Upload spinner
+                if vm.isUploadingPhoto {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .padding(.trailing, 4)
+                }
+
                 PhotosPicker(selection: $pickerItem, matching: .images) {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
@@ -551,6 +558,7 @@ private struct PhotoProgressSection: View {
                     .background(Color.brandGreen.opacity(0.10))
                     .clipShape(Capsule())
                 }
+                .disabled(vm.isUploadingPhoto)
                 .accessibilityLabel("Add progress photo")
             }
             .padding(.bottom, Spacing.sm)
@@ -558,47 +566,42 @@ private struct PhotoProgressSection: View {
             // Horizontal scroll
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: Spacing.sm) {
-                    if vm.progressPhotos.isEmpty {
+                    if vm.progressPhotos.isEmpty && !vm.isUploadingPhoto {
                         EmptyPhotoCard()
                     }
 
                     ForEach(vm.progressPhotos) { meta in
-                        ProgressPhotoCard(
-                            meta: meta,
-                            image: vm.loadImage(filename: meta.filename)
-                        )
-                        .onTapGesture { fullScreenPhoto = meta }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                vm.deletePhoto(meta.id)
-                            } label: {
-                                Label("Delete Photo", systemImage: "trash")
+                        ProgressPhotoCard(meta: meta)
+                            .onTapGesture { fullScreenPhoto = meta }
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    Task { await vm.deletePhoto(meta.id) }
+                                } label: {
+                                    Label("Delete Photo", systemImage: "trash")
+                                }
                             }
-                        }
                     }
                 }
-                .padding(.bottom, 4) // room for shadow
+                .padding(.bottom, 4)
             }
         }
         .onChange(of: pickerItem) { _, newItem in
             guard let newItem else { return }
             Task {
-                if let data = try? await newItem.loadTransferable(type: Data.self),
+                if let data  = try? await newItem.loadTransferable(type: Data.self),
                    let image = UIImage(data: data) {
-                    vm.addPhoto(image)
+                    await vm.addPhoto(image)
                 }
                 pickerItem = nil
             }
         }
         .sheet(item: $fullScreenPhoto) { meta in
-            PhotoFullScreenView(
-                meta: meta,
-                image: vm.loadImage(filename: meta.filename),
-                onDelete: {
-                    vm.deletePhoto(meta.id)
+            PhotoFullScreenView(meta: meta) {
+                Task {
+                    await vm.deletePhoto(meta.id)
                     fullScreenPhoto = nil
                 }
-            )
+            }
         }
     }
 }
@@ -629,42 +632,55 @@ private struct EmptyPhotoCard: View {
 private struct ProgressPhotoCard: View {
 
     let meta: ProgressPhotoMeta
-    let image: UIImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
 
-            // Thumbnail
+            // Thumbnail — loaded from signed Supabase Storage URL
             Group {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color(white: 0.90)
-                        .overlay {
-                            Image(systemName: "photo")
-                                .foregroundStyle(Color(white: 0.68))
+                if let urlStr = meta.url, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            photoPlaceholder(icon: "exclamationmark.triangle")
+                        default:
+                            photoPlaceholder(icon: nil)
                         }
+                    }
+                } else {
+                    photoPlaceholder(icon: "photo")
                 }
             }
             .frame(width: 110, height: 130)
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            // Week label
             Text("Week \(meta.weekNumber)")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color.black)
                 .lineLimit(1)
 
-            // Date
-            Text(meta.date, format: .dateTime.month(.abbreviated).day().year())
+            Text(meta.createdAt, format: .dateTime.month(.abbreviated).day().year())
                 .font(.system(size: 10))
                 .foregroundStyle(Color(white: 0.55))
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Progress photo, Week \(meta.weekNumber)")
         .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder
+    private func photoPlaceholder(icon: String?) -> some View {
+        Color(white: 0.90)
+            .overlay {
+                if let icon {
+                    Image(systemName: icon)
+                        .foregroundStyle(Color(white: 0.65))
+                } else {
+                    ProgressView().scaleEffect(0.7)
+                }
+            }
     }
 }
 
@@ -673,7 +689,6 @@ private struct ProgressPhotoCard: View {
 private struct PhotoFullScreenView: View {
 
     let meta: ProgressPhotoMeta
-    let image: UIImage?
     let onDelete: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -684,11 +699,22 @@ private struct PhotoFullScreenView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .ignoresSafeArea(edges: .bottom)
+                if let urlStr = meta.url, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .ignoresSafeArea(edges: .bottom)
+                        case .failure:
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundStyle(Color(white: 0.45))
+                        default:
+                            ProgressView().tint(.white)
+                        }
+                    }
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 48))
@@ -704,7 +730,7 @@ private struct PhotoFullScreenView: View {
                         Text("Week \(meta.weekNumber)")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Color.white)
-                        Text(meta.date, format: .dateTime.month().day().year())
+                        Text(meta.createdAt, format: .dateTime.month().day().year())
                             .font(.system(size: 11))
                             .foregroundStyle(Color(white: 0.65))
                     }
@@ -716,9 +742,7 @@ private struct PhotoFullScreenView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showDeleteAlert = true
-                    } label: {
+                    Button { showDeleteAlert = true } label: {
                         Image(systemName: "trash")
                             .foregroundStyle(Color(red: 1.0, green: 0.23, blue: 0.19))
                     }
@@ -727,9 +751,9 @@ private struct PhotoFullScreenView: View {
             }
             .alert("Delete Photo?", isPresented: $showDeleteAlert) {
                 Button("Delete", role: .destructive) { onDelete() }
-                Button("Cancel",  role: .cancel)     { }
+                Button("Cancel", role: .cancel)      { }
             } message: {
-                Text("This photo will be permanently removed from your device.")
+                Text("This photo will be permanently deleted from your account.")
             }
         }
     }
