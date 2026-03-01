@@ -20,6 +20,7 @@ struct SkinIn_iOSApp: App {
     @State private var supabase = SupabaseManager.shared
     @AppStorage(Config.UserDefaultsKey.hasSeenOnboarding) private var hasSeenOnboarding = false
     @AppStorage(Config.UserDefaultsKey.hasCompletedSetup) private var hasCompletedSetup = false
+    @Environment(\.scenePhase) private var scenePhase
 
     // True once we've checked the backend for an existing plan.
     // Reset to false on sign-out so the check reruns on the next login.
@@ -75,6 +76,15 @@ struct SkinIn_iOSApp: App {
             .onChange(of: supabase.isAuthenticated) { _, isAuthenticated in
                 if !isAuthenticated {
                     didCheckRemoteSetup = false
+                }
+            }
+            // Refresh the Supabase session whenever the app returns to the foreground.
+            // This keeps the UserDefaults access token fresh so that ViewModels
+            // (WorkoutsViewModel, HomeViewModel, ProgressViewModel) can make
+            // authenticated API calls without hitting 401 after the 1-hour token expiry.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    Task { await supabase.restoreSession() }
                 }
             }
         }

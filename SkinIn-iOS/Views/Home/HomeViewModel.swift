@@ -21,13 +21,15 @@ final class HomeViewModel {
     // MARK: Week Progress State
 
     var currentWeek: Int = 1
-    var completedWorkouts: Int = 3
-    var totalWorkoutsThisWeek: Int = 4
-    var graceWeeksLeft: Int = 1
 
-    // MARK: AI Nudge State
+    // MARK: - Init (load UserDefaults cache for instant cold-launch display)
 
-    var aiNudgeMessage: String = "I noticed you usually workout at 6pm. Ready to crush Leg Day?"
+    init() {
+        let cachedStake = UserDefaults.standard.double(forKey: "skinin_home_stake")
+        if cachedStake > 0 { totalStake = cachedStake }
+        let cachedWeek = UserDefaults.standard.integer(forKey: "skinin_home_week")
+        if cachedWeek > 0 { currentWeek = cachedWeek }
+    }
 
     // MARK: Computed
 
@@ -113,6 +115,45 @@ final class HomeViewModel {
         ),
     ]
 
+    // MARK: - Week Countdown State
+
+    /// Server-authoritative time at which the current program week ends.
+    var weekEndsAt: Date? = nil
+
+    /// Live "Xd Xh Xm" string updated every minute.
+    var weekCountdown: String = ""
+
+    private var weekTimer: Timer?
+
+    func beginWeekCountdown(endsAt: Date) {
+        weekTimer?.invalidate()
+        weekEndsAt = endsAt
+        tickWeek()
+        weekTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            self.tickWeek()
+        }
+    }
+
+    func stopWeekTimer() {
+        weekTimer?.invalidate()
+        weekTimer = nil
+        weekEndsAt = nil
+        weekCountdown = ""
+    }
+
+    private func tickWeek() {
+        guard let endsAt = weekEndsAt else { return }
+        let remaining = endsAt.timeIntervalSinceNow
+        guard remaining > 0 else { stopWeekTimer(); return }
+        let days    = Int(remaining) / 86400
+        let hours   = (Int(remaining) % 86400) / 3600
+        let minutes = (Int(remaining) % 3600) / 60
+        if days > 0      { weekCountdown = "\(days)d \(hours)h \(minutes)m" }
+        else if hours > 0 { weekCountdown = "\(hours)h \(minutes)m" }
+        else              { weekCountdown = "\(minutes)m" }
+    }
+
     // MARK: - Cooldown State
 
     /// The server-authoritative time at which the 18-hour cooldown expires.
@@ -147,9 +188,22 @@ final class HomeViewModel {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
+        let isoFull = ISO8601DateFormatter()
+        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoBasic = ISO8601DateFormatter()
+
         await MainActor.run {
             if let paid = json["amount_paid"] as? Double { totalStake = paid }
             if let week = json["week_number"] as? Int    { currentWeek = week }
+
+            if let str = json["week_ends_at"] as? String,
+               let date = isoFull.date(from: str) ?? isoBasic.date(from: str) {
+                beginWeekCountdown(endsAt: date)
+            }
+
+            // Persist for instant display on the next cold launch
+            UserDefaults.standard.set(totalStake,  forKey: "skinin_home_stake")
+            UserDefaults.standard.set(currentWeek, forKey: "skinin_home_week")
         }
     }
 
@@ -211,12 +265,78 @@ final class HomeViewModel {
         cooldownCountdown = String(format: "%02d:%02d:%02d", h, m, s)
     }
 
+    // MARK: - AI Tip State
+
+    var aiTipText: String    = ""
+    var aiTipExpanded: Bool  = false
+    var aiTipLoading: Bool   = false
+
+    /// True when a tip is loaded AND the user hasn't dismissed it within 24h.
+    var aiTipVisible: Bool {
+        guard !aiTipText.isEmpty else { return false }
+        if let until = UserDefaults.standard.object(forKey: "skinin_ai_tip_dismissed_until") as? Date {
+            return Date() > until
+        }
+        return true
+    }
+
+    // MARK: - AI Tip Methods
+
+    func fetchAITip() async {
+        guard let token = UserDefaults.standard.string(forKey: Config.UserDefaultsKey.supabaseSessionToken),
+              let url   = URL(string: Config.apiBaseURL + "/api/ai-tip")
+        else { return }
+
+        await MainActor.run { aiTipLoading = true }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "{}".data(using: .utf8)
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tip  = json["tip"] as? String
+        else {
+            await MainActor.run { aiTipLoading = false }
+            return
+        }
+
+        await MainActor.run {
+            aiTipText    = tip
+            aiTipLoading = false
+        }
+    }
+
+    /// Hides the AI tip card for 24 hours (stored in UserDefaults).
+    func dismissAITip() {
+        let until = Date().addingTimeInterval(24 * 60 * 60)
+        UserDefaults.standard.set(until, forKey: "skinin_ai_tip_dismissed_until")
+        aiTipExpanded = false
+        aiTipText     = ""
+    }
+
+    /// Broadcasts a tab-switch to the Workouts tab via NotificationCenter.
+    /// MainTabView listens for this notification and updates selectedTab.
+    func switchToWorkoutsTab() {
+        NotificationCenter.default.post(name: .skinInSwitchToWorkouts, object: nil)
+    }
+
     // MARK: - Actions
 
     func signOut() {
         stopCooldownTimer()
+        stopWeekTimer()
         SupabaseManager.shared.signOut()
         // The app-level router in SkinIn_iOSApp observes isAuthenticated and
         // automatically transitions back to OnboardingView / LoginView.
     }
+}
+
+// MARK: - Notification Name
+
+extension Notification.Name {
+    static let skinInSwitchToWorkouts = Notification.Name("skinInSwitchToWorkouts")
 }

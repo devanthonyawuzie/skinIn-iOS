@@ -12,7 +12,7 @@ import SwiftUI
 struct HomeView: View {
 
     @State private var vm = HomeViewModel()
-    @State private var showAI = false
+    @State private var showFullChat = false
 
     // Light gray background matches setup screens — not the dark appBackground.
     private let background = Color(red: 0.96, green: 0.96, blue: 0.96)
@@ -38,19 +38,19 @@ struct HomeView: View {
                             progress: vm.protectionProgress
                         )
 
-                        WeekProgressCard(
-                            currentWeek: vm.currentWeek,
-                            completedWorkouts: vm.completedWorkouts,
-                            totalWorkoutsThisWeek: vm.totalWorkoutsThisWeek,
-                            graceWeeksLeft: vm.graceWeeksLeft
-                        )
+                        if !vm.weekCountdown.isEmpty {
+                            WeekCountdownCard(countdown: vm.weekCountdown, currentWeek: vm.currentWeek)
+                        }
 
                         if vm.cooldownActive {
                             CooldownBanner(countdown: vm.cooldownCountdown)
                                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
                         }
 
-                        AISnudgeCard(message: vm.aiNudgeMessage)
+                        if vm.aiTipVisible || vm.aiTipLoading {
+                            AITipBanner(vm: vm, onFullChat: { showFullChat = true })
+                                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                        }
                     }
                     .padding(.horizontal, Spacing.md)
                     // 100pt bottom padding clears the 60pt custom tab bar + floating button + safe area.
@@ -58,13 +58,15 @@ struct HomeView: View {
                 }
             }
 
-            // MARK: Floating AI Button
+            // MARK: Floating AI Button — tap to toggle the AI tip card expand state
             VStack {
                 Spacer()
                 HStack {
                     Spacer()
                     Button {
-                        showAI = true
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            vm.aiTipExpanded.toggle()
+                        }
                     } label: {
                         ZStack {
                             Circle()
@@ -91,14 +93,17 @@ struct HomeView: View {
                     .transition(.opacity)
             }
         }
-        .sheet(isPresented: $showAI) {
+        .sheet(isPresented: $showFullChat) {
             SkinInAIView()
         }
         .animation(.easeInOut(duration: 0.22), value: vm.showNotifications)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.cooldownActive)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.aiTipVisible)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.aiTipExpanded)
         .task {
             await vm.fetchSubscriptionData()
             await vm.fetchCooldownStatus()
+            await vm.fetchAITip()
         }
         // The NavigationStack in the app root hides back buttons for the home flow;
         // make sure the custom bar renders correctly even when embedded.
@@ -270,74 +275,6 @@ private struct TotalStakeCard: View {
 
 // MARK: - WeekProgressCard
 
-private struct WeekProgressCard: View {
-
-    let currentWeek: Int
-    let completedWorkouts: Int
-    let totalWorkoutsThisWeek: Int
-    let graceWeeksLeft: Int
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-
-            // MARK: Icon Circle
-            ZStack {
-                Circle()
-                    .fill(Color.brandGreen.opacity(0.15))
-                    .frame(width: 48, height: 48)
-
-                Image(systemName: "arrow.trianglehead.2.counterclockwise")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.brandGreen)
-            }
-            .accessibilityHidden(true)
-
-            // MARK: Text Content
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-
-                Text("Week \(currentWeek) Progress")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.black)
-                    .accessibilityAddTraits(.isHeader)
-
-                // Inline bold green fraction using Text concatenation
-                (
-                    Text("You've crushed ")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(Color(white: 0.40))
-                    + Text("\(completedWorkouts)/\(totalWorkoutsThisWeek)")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.brandGreen)
-                    + Text(" workouts. Just one more to lock in this week's deposit!")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(Color(white: 0.40))
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel(
-                    "You've crushed \(completedWorkouts) of \(totalWorkoutsThisWeek) workouts. Just one more to lock in this week's deposit!"
-                )
-
-                if graceWeeksLeft > 0 {
-                    Text("\(graceWeeksLeft) Grace Week\(graceWeeksLeft == 1 ? "" : "s") Left")
-                        .font(.badgeLabel)
-                        .foregroundStyle(Color.orange)
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.15))
-                        .clipShape(Capsule())
-                        .padding(.top, 2)
-                        .accessibilityLabel("\(graceWeeksLeft) grace week\(graceWeeksLeft == 1 ? "" : "s") remaining")
-                }
-            }
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
-    }
-}
-
 // MARK: - WeekPlanSection
 
 private struct WeekPlanSection: View {
@@ -454,56 +391,142 @@ private struct WorkoutDayCard: View {
     }
 }
 
-// MARK: - AISnudgeCard
+// MARK: - AITipBanner
 
-private struct AISnudgeCard: View {
+/// Expandable AI coaching tip card.
+/// Compact: one-line preview + chevron. Expanded: full tip + action buttons.
+/// The floating brain button in HomeView drives vm.aiTipExpanded.
+private struct AITipBanner: View {
 
-    let message: String
+    let vm: HomeViewModel
+    let onFullChat: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        VStack(spacing: 0) {
 
-            HStack(alignment: .top, spacing: Spacing.sm) {
-
-                // MARK: AI Icon Circle
-                ZStack {
-                    Circle()
-                        .fill(Color.brandGreen.opacity(0.15))
-                        .frame(width: 40, height: 40)
-
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.brandGreen)
+            // MARK: Header row (always visible) — tapping toggles expanded
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    vm.aiTipExpanded.toggle()
                 }
-                .accessibilityHidden(true)
+            } label: {
+                HStack(spacing: Spacing.sm) {
 
-                // MARK: Message — "SkinIn AI:" bold + message gray inline
-                (
-                    Text("SkinIn AI: ")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.black)
-                    + Text(message)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(Color(white: 0.40))
-                )
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("SkinIn AI: \(message)")
+                    // Brain icon
+                    ZStack {
+                        Circle()
+                            .fill(Color.brandGreen.opacity(0.12))
+                            .frame(width: 38, height: 38)
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color.brandGreen)
+                    }
+                    .accessibilityHidden(true)
+
+                    if vm.aiTipLoading {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("SkinIn AI")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color.black)
+                            Text("Generating your tip…")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(white: 0.55))
+                        }
+                    } else {
+                        (
+                            Text("SkinIn AI: ")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color.black)
+                            + Text(vm.aiTipText)
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color(white: 0.40))
+                        )
+                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: false)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: vm.aiTipExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(white: 0.55))
+                }
+                .padding(Spacing.md)
+                .contentShape(Rectangle())
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+            .buttonStyle(.plain)
+            .accessibilityLabel("SkinIn AI tip. Tap to \(vm.aiTipExpanded ? "collapse" : "expand").")
 
-            // MARK: Red Notification Badge
-            Circle()
-                .fill(Color.red)
-                .frame(width: 10, height: 10)
-                .offset(x: -Spacing.sm, y: Spacing.sm)
-                .accessibilityHidden(true)
+            // MARK: Expanded content
+            if vm.aiTipExpanded && !vm.aiTipLoading {
+                Divider()
+                    .padding(.horizontal, Spacing.md)
+
+                VStack(alignment: .leading, spacing: Spacing.md) {
+
+                    // Full tip text
+                    Text(vm.aiTipText)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(white: 0.40))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // Action buttons row 1: Start Workout + Dismiss
+                    HStack(spacing: Spacing.sm) {
+                        Button {
+                            vm.switchToWorkoutsTab()
+                        } label: {
+                            Label("Start Workout", systemImage: "play.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(Color.brandGreen)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                vm.dismissAITip()
+                            }
+                        } label: {
+                            Label("Dismiss 24h", systemImage: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color(white: 0.45))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(Color(white: 0.93))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer(minLength: 0)
+                    }
+
+                    // Full chat link
+                    Button(action: onFullChat) {
+                        HStack(spacing: 4) {
+                            Text("Full Chat")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.brandGreen)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.brandGreen)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open full SkinIn AI chat")
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, Spacing.md)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("SkinIn AI nudge: \(message). New notification.")
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -714,6 +737,54 @@ private struct CooldownBanner: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Next workout unlocks in \(countdown)")
+    }
+}
+
+// MARK: - WeekCountdownCard
+
+/// Shows a live countdown to when the current program week resets.
+/// Helps users plan ahead without creating anxiety — purely informational.
+private struct WeekCountdownCard: View {
+
+    let countdown: String
+    let currentWeek: Int
+
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.07))
+                    .frame(width: 44, height: 44)
+
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(Color.black)
+            }
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("WEEK \(currentWeek) ENDS IN")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(white: 0.55))
+                    .kerning(0.5)
+
+                Text(countdown)
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundStyle(Color.black)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.linear(duration: 0.25), value: countdown)
+            }
+
+            Spacer()
+        }
+        .padding(Spacing.md)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Week \(currentWeek) ends in \(countdown)")
     }
 }
 

@@ -30,6 +30,9 @@ struct MainTabView: View {
                 ))
             }
             .ignoresSafeArea(.keyboard)
+            .onReceive(NotificationCenter.default.publisher(for: .skinInSwitchToWorkouts)) { _ in
+                vm.selectedTab = .workouts
+            }
     }
 
     // MARK: - Content Router
