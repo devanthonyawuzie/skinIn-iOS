@@ -97,6 +97,12 @@ final class WorkoutsViewModel {
     // MARK: - Fetch
 
     func fetch() async {
+        // Refresh the Supabase session before using the token.
+        // The SDK auto-refreshes the access token via its keychain refresh token if
+        // the 1-hour access token has expired. This prevents "Failed to load workouts"
+        // errors when returning to the app after >1 hour in the background.
+        await SupabaseManager.shared.restoreSession()
+
         guard let token = UserDefaults.standard.string(
             forKey: Config.UserDefaultsKey.supabaseSessionToken
         ) else {

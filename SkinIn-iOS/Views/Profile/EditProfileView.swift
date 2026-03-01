@@ -138,7 +138,7 @@ private struct AvatarSection: View {
                     .frame(width: 94, height: 94)
 
                 Circle()
-                    .fill(Color(red: 0.12, green: 0.14, blue: 0.18))
+                    .fill(Color(white: 0.92))
                     .frame(width: 86, height: 86)
                     .overlay(
                         Image(systemName: "person.fill")
@@ -149,7 +149,7 @@ private struct AvatarSection: View {
                 // Pencil badge
                 ZStack {
                     Circle()
-                        .fill(Color(red: 0.12, green: 0.14, blue: 0.18))
+                        .fill(Color.black)
                         .frame(width: 26, height: 26)
                     Image(systemName: "pencil")
                         .font(.system(size: 12, weight: .bold))
