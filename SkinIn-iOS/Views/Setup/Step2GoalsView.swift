@@ -164,7 +164,7 @@ struct Step2GoalsView: View {
 
         // MARK: Next Button (pinned to bottom, outside scroll)
         VStack {
-            Button(action: { vm.handleStep2NextTap() }) {
+            Button(action: { vm.handleStep3NextTap() }) {
                 Text("Next: Set Your Wager \u{2192}")
                     .font(.buttonLabel)
                     .foregroundStyle(Color.black)

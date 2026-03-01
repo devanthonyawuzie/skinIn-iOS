@@ -130,6 +130,8 @@ final class SupabaseManager {
             lastName: data.lastName,
             dateOfBirth: dobFormatter.string(from: data.dateOfBirth),
             sex: data.sex,
+            heightCm: data.heightCm,
+            activityLevel: data.activityLevel.rawValue,
             goal: data.goal?.rawValue ?? "",
             experienceLevel: data.experienceLevel.rawValue,
             currentWeight: Double(data.currentWeight) ?? 0,
@@ -152,12 +154,24 @@ final class SupabaseManager {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         request.httpBody = try encoder.encode(payload)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             throw ProfileError.serverError(statusCode)
+        }
+
+        // Cache nutrition targets locally so BlueprintView can display them
+        // immediately without an extra network call.
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let tdee = json["tdee"] as? [String: Any] {
+            if let cals = tdee["targetCalories"] as? Int {
+                UserDefaults.standard.set(cals, forKey: "skinin_target_calories")
+            }
+            if let protein = tdee["proteinGrams"] as? Int {
+                UserDefaults.standard.set(protein, forKey: "skinin_protein_grams")
+            }
         }
     }
 
@@ -238,6 +252,8 @@ private struct ProfilePayload: Encodable {
     let lastName: String
     let dateOfBirth: String   // ISO 8601 date string "yyyy-MM-dd"
     let sex: String
+    let heightCm: Double      // derived from ft + in inputs
+    let activityLevel: String // e.g. "moderately_active"
     let goal: String
     let experienceLevel: String
     let currentWeight: Double

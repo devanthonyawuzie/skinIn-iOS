@@ -35,8 +35,8 @@ struct SetupContainerView: View {
         }
         .navigationBarBackButtonHidden(true)
         .background(
-            // Step 3 uses dark background; steps 1 & 2 use light gray.
-            vm.currentStep == 3
+            // Step 4 (loading) uses dark background; steps 1–3 use light gray.
+            vm.currentStep == 4
                 ? Color.appBackground.ignoresSafeArea()
                 : Color(red: 0.96, green: 0.96, blue: 0.96).ignoresSafeArea()
         )
@@ -60,6 +60,8 @@ struct SetupContainerView: View {
         case 1:
             Step1AboutYouView(vm: vm)
         case 2:
+            Step2BodyStatsView(vm: vm)
+        case 3:
             Step2GoalsView(vm: vm)
         default:
             SetupLoadingView(vm: vm, onSetupComplete: onSetupComplete)
@@ -69,16 +71,16 @@ struct SetupContainerView: View {
 
 // MARK: - SetupProgressBar
 
-/// Three-capsule progress indicator. Active/completed dots are wide green
+/// Four-capsule progress indicator. Active/completed dots are wide green
 /// pills; inactive dots are small gray circles.
 /// Internal (not private) so step view previews can reference it.
 struct SetupProgressBar: View {
 
-    let currentStep: Int  // 1, 2, or 3
+    let currentStep: Int  // 1, 2, 3, or 4
 
     var body: some View {
         HStack(spacing: Spacing.xs) {
-            ForEach(1...3, id: \.self) { step in
+            ForEach(1...4, id: \.self) { step in
                 Capsule()
                     .fill(dotColor(for: step))
                     .frame(width: dotWidth(for: step), height: 6)
@@ -86,8 +88,8 @@ struct SetupProgressBar: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Setup progress, step \(currentStep) of 3")
-        .accessibilityValue("\(currentStep) of 3 completed")
+        .accessibilityLabel("Setup progress, step \(currentStep) of 4")
+        .accessibilityValue("\(currentStep) of 4 completed")
     }
 
     // MARK: Helpers
@@ -114,6 +116,7 @@ struct SetupProgressBar: View {
         SetupProgressBar(currentStep: 1)
         SetupProgressBar(currentStep: 2)
         SetupProgressBar(currentStep: 3)
+        SetupProgressBar(currentStep: 4)
     }
     .padding()
     .background(Color(red: 0.96, green: 0.96, blue: 0.96))

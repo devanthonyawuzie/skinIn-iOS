@@ -2,7 +2,7 @@
 // SkinIn-iOS
 //
 // Single ViewModel that owns all state and side-effect logic for the
-// post-login setup flow (steps 1, 2, and 3).
+// post-login setup flow (steps 1, 2, 3, and 4).
 // Views in Views/Setup/ are pure renderers — they bind here and call
 // the methods below; they import no system permission frameworks.
 
@@ -19,7 +19,7 @@ final class SetupViewModel {
 
     // MARK: Navigation
 
-    /// Current active step. 1 = About You, 2 = Goals, 3 = Loading.
+    /// Current active step. 1 = About You, 2 = Body Stats, 3 = Goals, 4 = Loading.
     var currentStep: Int = 1
 
     // MARK: Step 1 — About You
@@ -30,22 +30,40 @@ final class SetupViewModel {
         byAdding: .year, value: -25, to: Date()
     ) ?? Date()
 
-    /// "Male", "Female", or "Other"
-    var sex: String = "Male"
-
     /// IANA timezone identifier captured once at onboarding (e.g. "America/New_York").
     /// Stored server-side as the single source of truth for all eligibility math.
     /// Device timezone changes after sign-up are ignored — UTC is always used.
     let timezone: String = TimeZone.current.identifier
 
-    // MARK: Step 2 — Goals
+    // MARK: Step 2 — Body Stats
+
+    /// "Male" or "Female"
+    var sex: String = "Male"
+
+    /// Height in feet (imperial input, converted to cm for the backend).
+    var heightFeet: String = "5"
+
+    /// Height additional inches (0–11).
+    var heightInches: String = "7"
+
+    /// Activity level selected by the user on the body stats step.
+    var activityLevel: ActivityLevel = .moderatelyActive
+
+    /// Derived height in centimetres from the ft/in inputs.
+    var heightCm: Double {
+        let feet = Double(heightFeet) ?? 0
+        let inches = Double(heightInches) ?? 0
+        return (feet * 12 + inches) * 2.54
+    }
+
+    // MARK: Step 3 — Goals
 
     var goal: Goal? = nil
     var experienceLevel: ExperienceLevel = .beginner
     var currentWeight: String = ""
     var goalWeight: String = ""
 
-    // MARK: Step 2 — Optional Permissions
+    // MARK: Step 3 — Optional Permissions
 
     var gymGeofencingEnabled: Bool = false
     var pushNotificationsEnabled: Bool = false
@@ -58,7 +76,7 @@ final class SetupViewModel {
 
     // MARK: Alert State
 
-    /// True when the user taps Next on step 2 with some permissions disabled.
+    /// True when the user taps Next on step 3 with some permissions disabled.
     var showPermissionAlert: Bool = false
 
     // MARK: CLLocationManager
@@ -71,6 +89,12 @@ final class SetupViewModel {
     var canProceedStep1: Bool {
         !firstName.trimmingCharacters(in: .whitespaces).isEmpty &&
         !lastName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var canProceedBodyStats: Bool {
+        (Double(heightFeet) ?? 0) > 0 &&
+        (Double(heightInches) ?? -1) >= 0 &&
+        heightCm > 0
     }
 
     var canProceedStep2: Bool {
@@ -98,9 +122,9 @@ final class SetupViewModel {
         currentStep = max(1, currentStep - 1)
     }
 
-    // MARK: - Step 2 Next Tap
+    // MARK: - Step 3 Next Tap
 
-    func handleStep2NextTap() {
+    func handleStep3NextTap() {
         if allPermissionsEnabled {
             advanceToLoadingStep()
         } else {
@@ -113,7 +137,7 @@ final class SetupViewModel {
     }
 
     private func advanceToLoadingStep() {
-        currentStep = 3
+        currentStep = 4
     }
 
     // MARK: - Permission Requests
@@ -169,6 +193,9 @@ final class SetupViewModel {
         Task {
             do {
                 try await SupabaseManager.shared.saveUserProfile(self)
+                // Cache the name immediately so ProfileView can display it
+                // on the very first visit without waiting for an API round-trip.
+                UserDefaults.standard.set("\(firstName)|\(lastName)", forKey: "skinin_profile_name")
                 await MainActor.run {
                     isLoading = false
                     // hasCompletedSetup is NOT set here — the user must confirm

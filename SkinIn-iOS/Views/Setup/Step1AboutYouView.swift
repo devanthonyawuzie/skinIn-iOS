@@ -116,33 +116,6 @@ struct Step1AboutYouView: View {
                 .padding(.top, Spacing.xl)
                 .padding(.horizontal, Spacing.lg)
 
-                // MARK: Sex
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Sex")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color.black)
-
-                    HStack(spacing: Spacing.sm) {
-                        ForEach(["Male", "Female"], id: \.self) { option in
-                            Button(action: { vm.sex = option }) {
-                                Text(option)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(vm.sex == option ? Color.black : Color(white: 0.45))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
-                                    .background(vm.sex == option ? Color.brandGreen : Color.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
-                                    .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(option)
-                            .accessibilityAddTraits(vm.sex == option ? [.isButton, .isSelected] : .isButton)
-                        }
-                    }
-                }
-                .padding(.top, Spacing.xl)
-                .padding(.horizontal, Spacing.lg)
-
                 Spacer(minLength: Spacing.xxl)
             }
         }
