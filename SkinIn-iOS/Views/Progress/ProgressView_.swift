@@ -47,6 +47,8 @@ struct ProgressView_: View {
             }
         }
         .task { await vm.fetchProgressData() }
+        // Re-fetch steps whenever the user changes the time range tab
+        .task(id: vm.selectedTimeRange) { await vm.fetchStepsForCurrentRange() }
     }
 }
 
@@ -101,68 +103,83 @@ private struct TrendAnalysisSection: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header row — always visible, tappable to collapse
+
+            // MARK: Header row — always visible
             HStack(alignment: .center, spacing: Spacing.sm) {
-                Text("Trend Analysis")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color.black)
+
+                // Title + subtitle
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Weight & Steps")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Color.black)
+                    Text("TRACKING")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(white: 0.55))
+                        .kerning(0.5)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
 
                 Spacer()
 
-                // Time range pills — only shown when expanded
-                if vm.isTrendChartExpanded {
-                    HStack(spacing: 4) {
-                        ForEach(TimeRange.allCases, id: \.self) { range in
+                // Time range segment control — always visible and tappable
+                HStack(spacing: 2) {
+                    ForEach(TimeRange.allCases, id: \.self) { range in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                vm.selectedTimeRange = range
+                            }
+                        } label: {
                             Text(range.rawValue)
                                 .font(.system(size: 12, weight: .semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
+                                .foregroundStyle(
+                                    vm.selectedTimeRange == range ? Color.black : Color(white: 0.50)
+                                )
+                                .frame(minWidth: 30)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 5)
                                 .background(
                                     vm.selectedTimeRange == range
                                         ? Color.brandGreen
-                                        : Color(white: 0.92)
-                                )
-                                .foregroundStyle(
-                                    vm.selectedTimeRange == range
-                                        ? Color.black
-                                        : Color(white: 0.50)
+                                        : Color.clear
                                 )
                                 .clipShape(Capsule())
-                                .onTapGesture { vm.selectedTimeRange = range }
-                                .accessibilityLabel("\(range.rawValue) time range")
-                                .accessibilityAddTraits(
-                                    vm.selectedTimeRange == range ? [.isSelected] : []
-                                )
+                                .animation(.easeInOut(duration: 0.18), value: vm.selectedTimeRange)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(range.rawValue) time range")
+                        .accessibilityAddTraits(vm.selectedTimeRange == range ? [.isSelected] : [])
                     }
                 }
+                .padding(3)
+                .background(Color(white: 0.92))
+                .clipShape(Capsule())
 
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color(white: 0.55))
-                    .rotationEffect(.degrees(vm.isTrendChartExpanded ? 0 : -90))
-                    .animation(.spring(response: 0.3), value: vm.isTrendChartExpanded)
-                    .accessibilityHidden(true)
+                // Collapse / expand chevron
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        vm.isTrendChartExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(white: 0.55))
+                        .rotationEffect(.degrees(vm.isTrendChartExpanded ? 0 : -90))
+                        .animation(.spring(response: 0.3), value: vm.isTrendChartExpanded)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(vm.isTrendChartExpanded ? "Collapse" : "Expand")
             }
             .padding(Spacing.md)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    vm.isTrendChartExpanded.toggle()
-                }
-            }
-            .accessibilityLabel(
-                vm.isTrendChartExpanded ? "Collapse Trend Analysis" : "Expand Trend Analysis"
-            )
-            .accessibilityAddTraits(.isButton)
 
-            // Collapsible content
+            // MARK: Collapsible content
             if vm.isTrendChartExpanded {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    // Stats row
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                VStack(alignment: .leading, spacing: 0) {
+
+                    // Weight stat + trend badge
+                    HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Avg. Weekly Loss")
+                            Text(vm.avgWeeklyChangeLabel)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Color(white: 0.55))
 
@@ -170,7 +187,7 @@ private struct TrendAnalysisSection: View {
                                 .font(.system(size: 28, weight: .black))
                                 .foregroundStyle(Color.black)
                                 .accessibilityLabel(
-                                    String(format: "Average weekly loss %.1f percent", vm.avgWeeklyChange)
+                                    String(format: "%@ %.1f percent", vm.avgWeeklyChangeLabel, vm.avgWeeklyChange)
                                 )
                         }
 
@@ -190,9 +207,34 @@ private struct TrendAnalysisSection: View {
                         .accessibilityLabel("Trend: \(vm.trendLabel)")
                     }
                     .padding(.horizontal, Spacing.md)
+                    .padding(.bottom, Spacing.md)
+
+                    // Steps bar chart
+                    Divider().padding(.horizontal, Spacing.md)
+
+                    StepsSection(data: vm.stepsData, range: vm.selectedTimeRange)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.sm)
+
+                    // Weight line chart
+                    Divider().padding(.horizontal, Spacing.md)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "scalemass.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color(white: 0.55))
+                            .accessibilityHidden(true)
+                        Text("WEIGHT (LBS)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color(white: 0.55))
+                            .kerning(0.5)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+                    .accessibilityLabel("Weight in pounds chart")
 
                     WeightLineChart(data: vm.weightData)
-                        .frame(height: 160)
+                        .frame(height: 140)
                         .padding(.horizontal, Spacing.sm)
                         .padding(.bottom, Spacing.md)
                         .accessibilityLabel("Weight trend line chart")
@@ -204,6 +246,147 @@ private struct TrendAnalysisSection: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
         .shadow(color: Color.black.opacity(0.07), radius: 8, x: 0, y: 2)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.isTrendChartExpanded)
+    }
+}
+
+// MARK: - StepsSection
+
+/// Shows a steps bar chart when HealthKit data is available,
+/// or an "Enable HealthKit" placeholder when there's no data.
+private struct StepsSection: View {
+
+    let data: [StepsDataPoint]
+    let range: TimeRange
+
+    private var hasData: Bool { data.contains { $0.steps > 0 } }
+    private var todaySteps: Int { data.last?.steps ?? 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+
+            // Sub-header
+            HStack(spacing: 5) {
+                Image(systemName: "figure.walk")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(white: 0.55))
+                    .accessibilityHidden(true)
+                Text("DAILY STEPS")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color(white: 0.55))
+                    .kerning(0.5)
+
+                Spacer()
+
+                if hasData && todaySteps > 0 {
+                    HStack(spacing: 3) {
+                        Text(todaySteps.formatted())
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(todaySteps >= 10_000 ? Color.brandGreen : Color.black)
+                        Text("today")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(white: 0.55))
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.xs)
+
+            if hasData {
+                StepsBarChart(data: data, range: range)
+                    .frame(height: 110)
+            } else {
+                // Placeholder
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "heart.text.clipboard")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color(white: 0.70))
+                        .accessibilityHidden(true)
+                    Text("Enable HealthKit in Settings to track daily steps")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(white: 0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 70)
+                .padding(.horizontal, Spacing.xs)
+                .accessibilityLabel("Enable HealthKit in Settings to track daily steps")
+            }
+        }
+    }
+}
+
+// MARK: - StepsBarChart
+
+private struct StepsBarChart: View {
+
+    let data: [StepsDataPoint]
+    let range: TimeRange
+
+    private let goal = 10_000
+
+    var body: some View {
+        Chart {
+            ForEach(data) { point in
+                BarMark(
+                    x: .value("Date", point.date, unit: .day),
+                    y: .value("Steps", point.steps)
+                )
+                .foregroundStyle(
+                    point.steps >= goal
+                        ? Color.brandGreen
+                        : Color(white: 0.80)
+                )
+                .cornerRadius(3)
+            }
+
+            // 10k goal dashed line
+            RuleMark(y: .value("Goal", goal))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4]))
+                .foregroundStyle(Color.brandGreen.opacity(0.55))
+                .annotation(position: .top, alignment: .trailing) {
+                    Text("10k")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.brandGreen.opacity(0.80))
+                }
+        }
+        .chartXAxis {
+            AxisMarks(values: xAxisValues) { _ in
+                AxisValueLabel(format: xFormat, centered: true)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(white: 0.55))
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing,
+                      values: .automatic(desiredCount: 3)) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3]))
+                    .foregroundStyle(Color(white: 0.88))
+                AxisValueLabel()
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color(white: 0.55))
+            }
+        }
+        .chartYScale(domain: 0...yMax)
+    }
+
+    private var yMax: Int {
+        max(12_000, (data.map(\.steps).max() ?? 12_000) + 2_000)
+    }
+
+    private var xAxisValues: AxisMarkValues {
+        switch range {
+        case .oneWeek:     return .stride(by: .day, count: 1)
+        case .oneMonth:    return .stride(by: .day, count: 7)
+        case .threeMonths: return .stride(by: .month, count: 1)
+        case .ytd:         return .stride(by: .month, count: 1)
+        }
+    }
+
+    private var xFormat: Date.FormatStyle {
+        switch range {
+        case .oneWeek:                 return .dateTime.weekday(.abbreviated)
+        case .oneMonth:                return .dateTime.month(.abbreviated).day()
+        case .threeMonths, .ytd:       return .dateTime.month(.abbreviated)
+        }
     }
 }
 

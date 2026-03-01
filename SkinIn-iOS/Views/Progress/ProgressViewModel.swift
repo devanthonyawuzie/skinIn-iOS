@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import UIKit
+import HealthKit
 
 // MARK: - TimeRange
 
@@ -24,6 +25,14 @@ struct WeightDataPoint: Identifiable {
     let id: UUID
     let date: Date
     let weightLbs: Double
+}
+
+// MARK: - StepsDataPoint
+
+struct StepsDataPoint: Identifiable {
+    let id: UUID
+    let date: Date
+    let steps: Int
 }
 
 // MARK: - BodyAreaStat
@@ -82,14 +91,28 @@ final class ProgressViewModel {
     var progressPhotos: [ProgressPhotoMeta] = []
     var isUploadingPhoto: Bool = false
 
+    // MARK: Steps (HealthKit)
+
+    var stepsData: [StepsDataPoint] = []
+    private let healthStore = HKHealthStore()
+
     // MARK: Weight chart (mock until weight-tracking is added)
 
     var weightData: [WeightDataPoint] {
         let calendar = Calendar.current
         let today    = Date()
-        return (0..<30).reversed().map { daysAgo in
+        let days: Int
+        switch selectedTimeRange {
+        case .oneWeek:     days = 7
+        case .oneMonth:    days = 30
+        case .threeMonths: days = 90
+        case .ytd:
+            let jan1 = calendar.date(from: calendar.dateComponents([.year], from: today)) ?? today
+            days = max(7, calendar.dateComponents([.day], from: jan1, to: today).day ?? 30)
+        }
+        return (0..<days).reversed().map { daysAgo in
             let date      = calendar.date(byAdding: .day, value: -daysAgo, to: today) ?? today
-            let base      = 180.0 - (Double(30 - daysAgo) * 0.12)
+            let base      = 180.0 - (Double(days - daysAgo) * (Double(days) * 0.004))
             let noiseSeed = Double((daysAgo * 17) % 10) / 10.0
             let noise     = noiseSeed * 0.8 - 0.4
             return WeightDataPoint(id: UUID(), date: date, weightLbs: base + noise)
@@ -97,6 +120,8 @@ final class ProgressViewModel {
     }
 
     var avgWeeklyChange: Double { -0.8 }
+    /// Human-readable label derived from the sign of avgWeeklyChange.
+    var avgWeeklyChangeLabel: String { avgWeeklyChange < 0 ? "Avg. Weekly Loss" : "Avg. Weekly Gain" }
     var trendLabel: String { "Consistent" }
 
     // MARK: Body area radar
@@ -165,8 +190,64 @@ final class ProgressViewModel {
     // MARK: - Fetch workout data
 
     func fetchProgressData() async {
-        async let _ = fetchWorkoutData()
-        async let _ = fetchPhotos()
+        async let workouts: () = fetchWorkoutData()
+        async let photos:   () = fetchPhotos()
+        async let steps:    () = fetchStepsForCurrentRange()
+        _ = await (workouts, photos, steps)
+    }
+
+    /// Queries HealthKit for daily step counts over the selected time range.
+    /// Silently returns empty array when HealthKit is unavailable or not authorised.
+    func fetchStepsForCurrentRange() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let calendar = Calendar.current
+        let today    = Date()
+
+        let startDate: Date
+        switch selectedTimeRange {
+        case .oneWeek:
+            startDate = calendar.date(byAdding: .day, value: -6,
+                                      to: calendar.startOfDay(for: today))!
+        case .oneMonth:
+            startDate = calendar.date(byAdding: .month, value: -1,
+                                      to: calendar.startOfDay(for: today))!
+        case .threeMonths:
+            startDate = calendar.date(byAdding: .month, value: -3,
+                                      to: calendar.startOfDay(for: today))!
+        case .ytd:
+            startDate = calendar.date(from: calendar.dateComponents([.year], from: today))
+                ?? calendar.startOfDay(for: today)
+        }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: today,
+                                                    options: .strictStartDate)
+
+        let points = await withCheckedContinuation {
+            (cont: CheckedContinuation<[StepsDataPoint], Never>) in
+
+            let query = HKStatisticsCollectionQuery(
+                quantityType:            stepType,
+                quantitySamplePredicate: predicate,
+                options:                 .cumulativeSum,
+                anchorDate:              calendar.startOfDay(for: startDate),
+                intervalComponents:      DateComponents(day: 1)
+            )
+
+            query.initialResultsHandler = { _, collection, _ in
+                var results: [StepsDataPoint] = []
+                collection?.enumerateStatistics(from: startDate, to: today) { stats, _ in
+                    let steps = Int(stats.sumQuantity()?.doubleValue(for: .count()) ?? 0)
+                    results.append(StepsDataPoint(id: UUID(), date: stats.startDate, steps: steps))
+                }
+                cont.resume(returning: results)
+            }
+
+            healthStore.execute(query)
+        }
+
+        await MainActor.run { stepsData = points }
     }
 
     private func fetchWorkoutData() async {
