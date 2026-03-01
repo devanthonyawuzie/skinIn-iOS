@@ -155,6 +155,41 @@ final class BlueprintViewModel {
         }
     }
 
+    // MARK: - Nutrition Targets
+
+    /// Cached calorie and macro data — populated during profile calibration
+    /// and stored in UserDefaults so no extra network call is needed here.
+    var nutritionTargets: NutritionTargets? {
+        let calories = UserDefaults.standard.integer(forKey: "skinin_target_calories")
+        let proteinG  = UserDefaults.standard.integer(forKey: "skinin_protein_grams")
+        guard calories > 0, proteinG > 0 else { return nil }
+
+        // Fat percentage varies by goal; carbs fill the remainder.
+        let fatFraction: Double
+        switch goal {
+        case .muscleGain:        fatFraction = 0.25
+        case .fatLoss:           fatFraction = 0.30
+        case .bodyRecomposition: fatFraction = 0.25
+        }
+
+        let proteinKcal = proteinG * 4
+        let fatKcal     = Int(Double(calories) * fatFraction)
+        let fatG        = fatKcal / 9
+        let carbKcal    = max(0, calories - proteinKcal - fatKcal)
+        let carbG       = carbKcal / 4
+
+        let pPct = Int((Double(proteinKcal) / Double(calories)) * 100)
+        let fPct = Int((Double(fatKcal)     / Double(calories)) * 100)
+        let cPct = max(0, 100 - pPct - fPct)
+
+        return NutritionTargets(
+            calories: calories,
+            protein:  MacroItem(label: "Protein", grams: proteinG, pct: pPct),
+            fat:      MacroItem(label: "Fat",     grams: fatG,     pct: fPct),
+            carbs:    MacroItem(label: "Carbs",   grams: carbG,    pct: cPct)
+        )
+    }
+
     // MARK: - Features
 
     /// Feature rows for the "What's Included" section.
@@ -476,4 +511,22 @@ struct BlueprintFeature: Sendable {
     let color: Color
     let title: String
     let subtitle: String
+}
+
+// MARK: - NutritionTargets
+
+struct NutritionTargets {
+    let calories: Int
+    let protein:  MacroItem
+    let fat:      MacroItem
+    let carbs:    MacroItem
+}
+
+// MARK: - MacroItem
+
+struct MacroItem {
+    let label: String
+    let grams: Int
+    /// Percentage of total daily calories (0–100).
+    let pct: Int
 }

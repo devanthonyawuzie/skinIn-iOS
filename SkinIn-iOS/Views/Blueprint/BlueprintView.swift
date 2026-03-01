@@ -65,6 +65,13 @@ struct BlueprintView: View {
                         .padding(.top, Spacing.md)
                         .padding(.horizontal, Spacing.lg)
 
+                    // MARK: Nutrition Targets Card
+                    if let targets = vm.nutritionTargets {
+                        NutritionTargetCard(targets: targets)
+                            .padding(.top, Spacing.lg)
+                            .padding(.horizontal, Spacing.lg)
+                    }
+
                     // MARK: Generate Error Banner
                     if let err = vm.generateError {
                         HStack(spacing: 8) {
@@ -583,6 +590,123 @@ private struct BlueprintFeatureRow: View {
         .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(feature.title): \(feature.subtitle)")
+    }
+}
+
+// MARK: - NutritionTargetCard
+
+private struct NutritionTargetCard: View {
+
+    let targets: NutritionTargets
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+
+            // Top row: label + calorie count
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+
+                    // Section label
+                    HStack(spacing: 5) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.brandGreen)
+                            .accessibilityHidden(true)
+                        Text("DAILY TARGETS")
+                            .font(.badgeLabel)
+                            .foregroundStyle(Color.brandGreen)
+                            .kerning(0.6)
+                    }
+
+                    // Calorie number
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text(targets.calories.formatted())
+                            .font(.system(size: 38, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.black)
+                        Text("kcal / day")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(white: 0.55))
+                            .padding(.bottom, 3)
+                    }
+                }
+
+                Spacer()
+
+                // Circular calorie ring — decorative accent
+                ZStack {
+                    Circle()
+                        .stroke(Color.brandGreen.opacity(0.12), lineWidth: 5)
+                        .frame(width: 52, height: 52)
+                    Circle()
+                        .trim(from: 0, to: 0.72)
+                        .stroke(Color.brandGreen, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.brandGreen)
+                        .accessibilityHidden(true)
+                }
+                .padding(.top, 2)
+            }
+
+            // Divider
+            Rectangle()
+                .fill(Color.black.opacity(0.06))
+                .frame(height: 1)
+                .padding(.vertical, Spacing.md)
+
+            // Macro pills row
+            HStack(spacing: Spacing.sm) {
+                MacroPill(item: targets.protein, accentColor: Color.brandGreen)
+                MacroPill(item: targets.fat,     accentColor: Color.orange)
+                MacroPill(item: targets.carbs,   accentColor: Color(red: 0.38, green: 0.55, blue: 1.0))
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .strokeBorder(Color.brandGreen.opacity(0.18), lineWidth: 1.5)
+        )
+        .shadow(color: Color.black.opacity(0.07), radius: 10, x: 0, y: 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Daily targets: \(targets.calories) kilocalories. Protein \(targets.protein.grams) grams. Fat \(targets.fat.grams) grams. Carbs \(targets.carbs.grams) grams.")
+    }
+}
+
+// MARK: - MacroPill
+
+private struct MacroPill: View {
+
+    let item: MacroItem
+    let accentColor: Color
+
+    var body: some View {
+        VStack(spacing: 3) {
+            // Colored dot + label
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(accentColor)
+                    .frame(width: 7, height: 7)
+                Text(item.label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(white: 0.50))
+            }
+            // Grams (bold)
+            Text("\(item.grams)g")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.black)
+            // Percentage
+            Text("\(item.pct)%")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(Color(white: 0.55))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.sm + 2)
+        .background(accentColor.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
